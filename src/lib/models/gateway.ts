@@ -25,6 +25,11 @@ function redact(key: string): string {
   return key.length > 6 ? `${key.slice(0, 5)}...REDACTED` : "REDACTED";
 }
 
+function envValue(key: string): string | undefined {
+  const value = process.env[key]?.trim();
+  return value ? value : undefined;
+}
+
 const ROLE_DEFAULT_FAMILY: Record<ModelRole, string> = {
   caption_qa: "qwen",
   verify: "minimax",
@@ -40,37 +45,37 @@ const ROLE_ENV_KEY: Record<ModelRole, string> = {
 };
 
 function familyFor(role: ModelRole): string {
-  return process.env[ROLE_ENV_KEY[role]] ?? ROLE_DEFAULT_FAMILY[role];
+  return envValue(ROLE_ENV_KEY[role]) ?? ROLE_DEFAULT_FAMILY[role];
 }
 
 function modelIdFor(family: string): string {
   const byFamily: Record<string, string | undefined> = {
-    qwen: process.env.MODEL_ID_QWEN,
-    minimax: process.env.MODEL_ID_MINIMAX,
-    gemma: process.env.MODEL_ID_GEMMA,
-    gemini: process.env.MODEL_ID_GEMINI ?? process.env.GEMINI_MODEL_ID ?? "gemini-2.5-flash-lite",
+    qwen: envValue("MODEL_ID_QWEN"),
+    minimax: envValue("MODEL_ID_MINIMAX"),
+    gemma: envValue("MODEL_ID_GEMMA"),
+    gemini: envValue("MODEL_ID_GEMINI") ?? envValue("GEMINI_MODEL_ID") ?? "gemini-2.5-flash-lite",
   };
   return byFamily[family] ?? family;
 }
 
 function baseUrlFor(family: string): string | undefined {
   const byFamily: Record<string, string | undefined> = {
-    qwen: process.env.QWEN_BASE_URL,
-    minimax: process.env.MINIMAX_BASE_URL,
-    gemma: process.env.GEMMA_BASE_URL,
-    gemini: process.env.GEMINI_BASE_URL ?? "https://generativelanguage.googleapis.com/v1beta/openai",
+    qwen: envValue("QWEN_BASE_URL"),
+    minimax: envValue("MINIMAX_BASE_URL"),
+    gemma: envValue("GEMMA_BASE_URL"),
+    gemini: envValue("GEMINI_BASE_URL") ?? "https://generativelanguage.googleapis.com/v1beta/openai",
   };
-  return byFamily[family] ?? process.env.AI_GATEWAY_BASE_URL;
+  return byFamily[family] ?? envValue("AI_GATEWAY_BASE_URL");
 }
 
 function apiKeyFor(family: string): string | undefined {
   const byFamily: Record<string, string | undefined> = {
-    qwen: process.env.QWEN_API_KEY,
-    minimax: process.env.MINIMAX_API_KEY,
-    gemma: process.env.GEMMA_API_KEY,
-    gemini: process.env.GEMINI_API_KEY,
+    qwen: envValue("QWEN_API_KEY"),
+    minimax: envValue("MINIMAX_API_KEY"),
+    gemma: envValue("GEMMA_API_KEY"),
+    gemini: envValue("GEMINI_API_KEY"),
   };
-  return byFamily[family] ?? process.env.AI_GATEWAY_API_KEY;
+  return byFamily[family] ?? envValue("AI_GATEWAY_API_KEY");
 }
 
 export function isRoleConfigured(role: ModelRole): boolean {

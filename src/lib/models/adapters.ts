@@ -89,12 +89,20 @@ ${kit.style_notes ? `\nStyle/tone notes:\n${kit.style_notes}\n` : ""}
 Return JSON only:
 {"issues":[{"type":"spelling|spacing|punctuation|hashtag|brand_term|terminology|grammar|style|ambiguity","severity":"critical|high|medium|low|suggestion|needs_review","original":"...","suggestion":"...","reason":"...","confidence":0.0,"is_definite_error":true,"context_before":"...","context_after":"..."}]}`;
 
-  const raw = await chat("caption_qa", [
+  const messages: Parameters<typeof chat>[1] = [
     { role: "system", content: system },
     { role: "user", content: `Brand Kit:\n${brandKitForPrompt(kit)}\n\nCaption:\n${caption}` },
-  ]);
-  const parsed = extractJson<{ issues: LLMIssueCandidate[] }>(raw);
-  return parsed?.issues ?? (raw === null ? null : []);
+  ];
+
+  const roles: ModelRole[] = ["caption_qa", "image_qa", "report"];
+  let sawModelResponse = false;
+  for (const role of roles) {
+    const raw = await chat(role, messages, { maxTokens: 5000 });
+    if (raw !== null) sawModelResponse = true;
+    const parsed = extractJson<{ issues: LLMIssueCandidate[] }>(raw);
+    if (Array.isArray(parsed?.issues)) return parsed.issues;
+  }
+  return sawModelResponse ? [] : null;
 }
 
 /** 22.2 Verifier — second reviewer removing false positives. */
