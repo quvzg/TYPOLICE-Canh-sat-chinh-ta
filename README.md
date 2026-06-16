@@ -22,6 +22,8 @@ Typolice ưu tiên workflow deterministic rules + AgentBase/MaaS-compatible mode
 - API key is provided only through runtime environment variables such as `GEMINI_API_KEY`; it is never committed to GitHub, Dockerfile, or client-side code.
 - If deploying to AgentBase, set `GEMINI_API_KEY` and related model routing variables in the runtime environment file or AgentBase runtime env.
 
+AgentBase/MaaS fallback: when deployed on AgentBase, Typolice can also use the runtime-injected `GREENNODE_CLIENT_ID` and `GREENNODE_CLIENT_SECRET` to obtain an active GreenNode AIP LLM key and discover enabled Qwen/MiniMax/Gemma model paths. This keeps the app usable even when `AI_GATEWAY_API_KEY` is not provided manually.
+
 ## Chạy app
 
 ```bash
@@ -46,6 +48,12 @@ MODEL_ID_GEMMA=        # cần vision để cross-check ảnh
 # Optional external fallback for image OCR/cross-check
 GEMINI_API_KEY=        # secret — KHÔNG commit, set ở .env.local hoặc AgentBase runtime env
 MODEL_ID_GEMINI=gemini-2.5-flash-lite
+
+# AgentBase Runtime fallback (no secret stored in source)
+GREENNODE_AIP_FALLBACK=true
+GREENNODE_MAAS_BASE_URL=https://maas-llm-aiplatform-hcm.api.vngcloud.vn/v1
+GREENNODE_AIP_API_KEY_NAME=
+GREENNODE_AIP_AUTO_CREATE_KEY=false
 ```
 
 Routing theo role: `MODEL_CAPTION_QA=qwen`, `MODEL_VERIFY=minimax`, `MODEL_IMAGE_QA=gemma`, `MODEL_REPORT=minimax`. Key chỉ được đọc ở server (API routes); log lỗi tự redact key.

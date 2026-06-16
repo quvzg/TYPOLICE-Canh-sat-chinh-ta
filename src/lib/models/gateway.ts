@@ -5,6 +5,12 @@
  */
 
 import type { AgentModelConfig } from "@/types";
+import {
+  canUseGreenNodeAipFallback,
+  getGreenNodeLlmApiKey,
+  getGreenNodeModelPath,
+  GREENNODE_MAAS_BASE_URL,
+} from "./greennodeAip";
 
 export type ModelRole = keyof AgentModelConfig;
 
@@ -69,7 +75,7 @@ function apiKeyFor(family: string): string | undefined {
 
 export function isRoleConfigured(role: ModelRole): boolean {
   const family = familyFor(role);
-  return Boolean(baseUrlFor(family) && apiKeyFor(family));
+  return Boolean(baseUrlFor(family) && apiKeyFor(family)) || canUseGreenNodeAipFallback(family);
 }
 
 export function isModelConfigured(): boolean {
@@ -88,6 +94,23 @@ export function getModelConfig(): AgentModelConfig {
     verify: modelLabelFor("verify"),
     image_qa: modelLabelFor("image_qa"),
     report: modelLabelFor("report"),
+  };
+}
+
+async function runtimeConfigFor(family: string): Promise<{ base?: string; key?: string; model?: string }> {
+  const directBase = baseUrlFor(family);
+  const directKey = apiKeyFor(family);
+  const directModel = modelIdFor(family);
+  if (directBase && directKey) return { base: directBase, key: directKey, model: directModel };
+
+  if (!canUseGreenNodeAipFallback(family)) return { base: directBase, key: directKey, model: directModel };
+  const key = await getGreenNodeLlmApiKey();
+  const model = await getGreenNodeModelPath(family);
+  if (!key || !model) return { base: directBase, key: directKey, model: directModel };
+  return {
+    base: GREENNODE_MAAS_BASE_URL,
+    key,
+    model,
   };
 }
 
@@ -113,9 +136,8 @@ export async function chat(
   opts: { temperature?: number; maxTokens?: number; timeoutMs?: number } = {}
 ): Promise<string | null> {
   const family = familyFor(role);
-  const base = baseUrlFor(family);
-  const key = apiKeyFor(family);
-  if (!base || !key) return null; // not configured → caller falls back to rules-only
+  const { base, key, model } = await runtimeConfigFor(family);
+  if (!base || !key || !model) return null; // not configured → caller falls back to rules-only
 
   const url = `${base.replace(/\/$/, "")}/chat/completions`;
   const controller = new AbortController();
@@ -129,7 +151,7 @@ export async function chat(
         Authorization: `Bearer ${key}`,
       },
       body: JSON.stringify({
-        model: modelIdFor(family),
+        model,
         messages,
         temperature: opts.temperature ?? 0.1,
         max_tokens: opts.maxTokens ?? 2048,
