@@ -17,9 +17,12 @@ export const metadata: Metadata = {
   description:
     "Workspace canvas: upload visuals, arrange Facebook/LinkedIn layouts, paste caption, run AI QA with inline highlights.",
   icons: {
-    icon: [{ url: "/typolice-icon.svg", type: "image/svg+xml" }],
-    shortcut: [{ url: "/typolice-icon.svg", type: "image/svg+xml" }],
-    apple: [{ url: "/typolice-icon.svg", type: "image/svg+xml" }],
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/typolice-icon.svg", type: "image/svg+xml" },
+    ],
+    shortcut: [{ url: "/icon.svg", type: "image/svg+xml" }],
+    apple: [{ url: "/icon.svg", type: "image/svg+xml" }],
   },
 };
 
