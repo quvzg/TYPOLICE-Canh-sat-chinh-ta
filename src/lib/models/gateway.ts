@@ -97,11 +97,16 @@ export function getModelConfig(): AgentModelConfig {
   };
 }
 
-async function runtimeConfigFor(family: string): Promise<{ base?: string; key?: string; model?: string }> {
+async function runtimeConfigFor(
+  family: string,
+  opts: { forceGreenNodeFallback?: boolean } = {}
+): Promise<{ base?: string; key?: string; model?: string; fromGreenNodeFallback?: boolean }> {
   const directBase = baseUrlFor(family);
   const directKey = apiKeyFor(family);
   const directModel = modelIdFor(family);
-  if (directBase && directKey) return { base: directBase, key: directKey, model: directModel };
+  if (!opts.forceGreenNodeFallback && directBase && directKey) {
+    return { base: directBase, key: directKey, model: directModel, fromGreenNodeFallback: false };
+  }
 
   if (!canUseGreenNodeAipFallback(family)) return { base: directBase, key: directKey, model: directModel };
   const key = await getGreenNodeLlmApiKey();
@@ -111,6 +116,7 @@ async function runtimeConfigFor(family: string): Promise<{ base?: string; key?: 
     base: GREENNODE_MAAS_BASE_URL,
     key,
     model,
+    fromGreenNodeFallback: true,
   };
 }
 
@@ -136,46 +142,75 @@ export async function chat(
   opts: { temperature?: number; maxTokens?: number; timeoutMs?: number } = {}
 ): Promise<string | null> {
   const family = familyFor(role);
-  const { base, key, model } = await runtimeConfigFor(family);
-  if (!base || !key || !model) return null; // not configured → caller falls back to rules-only
+  const config = await runtimeConfigFor(family);
+  if (!config.base || !config.key || !config.model) return null; // not configured → caller falls back to rules-only
 
-  const url = `${base.replace(/\/$/, "")}/chat/completions`;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? 60_000);
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      signal: controller.signal,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${key}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature: opts.temperature ?? 0.1,
-        max_tokens: opts.maxTokens ?? 2048,
-        chat_template_kwargs: { enable_thinking: false },
-      }),
-    });
-    if (!res.ok) {
-      const body = await res.text();
-      console.error(`[gateway] ${role}/${family} HTTP ${res.status} (key=${redact(key)}): ${body.slice(0, 300)}`);
-      return null;
+  const request = async (active: { base: string; key: string; model: string; fromGreenNodeFallback?: boolean }) => {
+    const url = `${active.base.replace(/\/$/, "")}/chat/completions`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? 60_000);
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${active.key}`,
+        },
+        body: JSON.stringify({
+          model: active.model,
+          messages,
+          temperature: opts.temperature ?? 0.1,
+          max_tokens: opts.maxTokens ?? 2048,
+          chat_template_kwargs: { enable_thinking: false },
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.text();
+        console.error(`[gateway] ${role}/${family} HTTP ${res.status} (key=${redact(active.key)}): ${body.slice(0, 300)}`);
+        return { ok: false as const, text: null };
+      }
+      const data = await res.json();
+      const message = data?.choices?.[0]?.message;
+      return {
+        ok: true as const,
+        text:
+          contentToText(message?.content) ??
+          contentToText(message?.reasoning_content) ??
+          contentToText(message?.reasoning) ??
+          null,
+      };
+    } finally {
+      clearTimeout(timer);
     }
-    const data = await res.json();
-    const message = data?.choices?.[0]?.message;
-    return (
-      contentToText(message?.content) ??
-      contentToText(message?.reasoning_content) ??
-      contentToText(message?.reasoning) ??
-      null
-    );
-  } catch (err) {
-    console.error(`[gateway] ${role}/${family} failed (key=${redact(key)}):`, err instanceof Error ? err.message : err);
+  };
+
+  try {
+    const first = await request({ base: config.base, key: config.key, model: config.model, fromGreenNodeFallback: config.fromGreenNodeFallback });
+    if (first.ok) return first.text;
+
+    if (!config.fromGreenNodeFallback && canUseGreenNodeAipFallback(family)) {
+      const fallback = await runtimeConfigFor(family, { forceGreenNodeFallback: true });
+      if (fallback.base && fallback.key && fallback.model) {
+        const retried = await request({ base: fallback.base, key: fallback.key, model: fallback.model, fromGreenNodeFallback: true });
+        return retried.ok ? retried.text : null;
+      }
+    }
     return null;
-  } finally {
-    clearTimeout(timer);
+  } catch (err) {
+    console.error(`[gateway] ${role}/${family} failed (key=${redact(config.key)}):`, err instanceof Error ? err.message : err);
+    if (!config.fromGreenNodeFallback && canUseGreenNodeAipFallback(family)) {
+      try {
+        const fallback = await runtimeConfigFor(family, { forceGreenNodeFallback: true });
+        if (fallback.base && fallback.key && fallback.model) {
+          const retried = await request({ base: fallback.base, key: fallback.key, model: fallback.model, fromGreenNodeFallback: true });
+          return retried.ok ? retried.text : null;
+        }
+      } catch (fallbackErr) {
+        console.error(`[gateway] ${role}/${family} GreenNode fallback failed:`, fallbackErr instanceof Error ? fallbackErr.message : fallbackErr);
+      }
+    }
+    return null;
   }
 }
 
