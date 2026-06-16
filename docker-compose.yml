@@ -1,0 +1,50 @@
+services:
+  app:
+    build:
+      context: .
+      args:
+        AI_GATEWAY_BASE_URL: ${AI_GATEWAY_BASE_URL:-}
+        AI_GATEWAY_API_KEY: ${AI_GATEWAY_API_KEY:-}
+        MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
+        QWEN_API_KEY: ${QWEN_API_KEY:-}
+        GEMMA_API_KEY: ${GEMMA_API_KEY:-}
+        GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+        QWEN_BASE_URL: ${QWEN_BASE_URL:-}
+        MINIMAX_BASE_URL: ${MINIMAX_BASE_URL:-}
+        GEMMA_BASE_URL: ${GEMMA_BASE_URL:-}
+        GEMINI_BASE_URL: ${GEMINI_BASE_URL:-}
+        MODEL_ID_QWEN: ${MODEL_ID_QWEN:-}
+        MODEL_ID_MINIMAX: ${MODEL_ID_MINIMAX:-}
+        MODEL_ID_GEMMA: ${MODEL_ID_GEMMA:-}
+        MODEL_ID_GEMINI: ${MODEL_ID_GEMINI:-gemini-2.5-flash-lite}
+        MODEL_CAPTION_QA: ${MODEL_CAPTION_QA:-qwen}
+        MODEL_VERIFY: ${MODEL_VERIFY:-minimax}
+        MODEL_IMAGE_QA: ${MODEL_IMAGE_QA:-gemma}
+        MODEL_REPORT: ${MODEL_REPORT:-minimax}
+    image: typolice:latest
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
+      AI_GATEWAY_BASE_URL: ${AI_GATEWAY_BASE_URL:-}
+      AI_GATEWAY_API_KEY: ${AI_GATEWAY_API_KEY:-}
+      MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
+      QWEN_API_KEY: ${QWEN_API_KEY:-}
+      GEMMA_API_KEY: ${GEMMA_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      QWEN_BASE_URL: ${QWEN_BASE_URL:-}
+      MINIMAX_BASE_URL: ${MINIMAX_BASE_URL:-}
+      GEMMA_BASE_URL: ${GEMMA_BASE_URL:-}
+      GEMINI_BASE_URL: ${GEMINI_BASE_URL:-}
+      MODEL_ID_QWEN: ${MODEL_ID_QWEN:-}
+      MODEL_ID_MINIMAX: ${MODEL_ID_MINIMAX:-}
+      MODEL_ID_GEMMA: ${MODEL_ID_GEMMA:-}
+      MODEL_ID_GEMINI: ${MODEL_ID_GEMINI:-gemini-2.5-flash-lite}
+      MODEL_CAPTION_QA: ${MODEL_CAPTION_QA:-qwen}
+      MODEL_VERIFY: ${MODEL_VERIFY:-minimax}
+      MODEL_IMAGE_QA: ${MODEL_IMAGE_QA:-gemma}
+      MODEL_REPORT: ${MODEL_REPORT:-minimax}
+    volumes:
+      - ./storage:/app/storage
+      - ./brand_guidelines:/app/brand_guidelines

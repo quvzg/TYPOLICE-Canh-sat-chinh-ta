@@ -1,0 +1,52 @@
+{
+  "brand_terms": [
+    "VNG",
+    "VNG Group",
+    "VNGGames",
+    "GreenNode",
+    "Starter",
+    "AI Agent",
+    "Zalopay",
+    "Life at VNG",
+    "Life at VNGGames",
+    "Life at Zalopay",
+    "AI-native"
+  ],
+  "protected_terms": [
+    "Starter",
+    "VNG",
+    "VNG Group",
+    "VNGGames",
+    "GreenNode",
+    "Zalopay",
+    "Life at VNG",
+    "Life at VNGGames",
+    "Life at Zalopay",
+    "AI-native"
+  ],
+  "preferred_spellings": {
+    "VNG corp": "VNG Group",
+    "vng corp": "VNG Group",
+    "VNG Corporation": "VNG Group",
+    "vng corporation": "VNG Group",
+    "VNGG": "VNGGames",
+    "green node": "GreenNode",
+    "Green Node": "GreenNode",
+    "greennode": "GreenNode",
+    "ZaloPay": "Zalopay",
+    "chỉnh chu": "chỉn chu",
+    "no-tech": "non-tech"
+  },
+  "do_not_change": [
+    "Starter",
+    "VNG",
+    "VNG Group",
+    "VNGGames",
+    "GreenNode",
+    "Zalopay",
+    "Life at VNG",
+    "Life at VNGGames",
+    "Life at Zalopay",
+    "AI-native"
+  ]
+}

@@ -1,0 +1,10 @@
+services:
+  app:
+    image: ghcr.io/quvzg/typolice:latest
+    container_name: typolice
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./storage:/app/storage
+      - ./brand_guidelines:/app/brand_guidelines

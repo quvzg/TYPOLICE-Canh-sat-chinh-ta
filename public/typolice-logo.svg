@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="236" height="72" viewBox="0 0 236 72" role="img" aria-labelledby="typolice-logo-title typolice-logo-desc">
+  <title id="typolice-logo-title">Typolice logo</title>
+  <desc id="typolice-logo-desc">Typolice lockup with orange police star mark, glowing rounded box, and styled wordmark.</desc>
+  <defs>
+    <linearGradient id="typolice-border" x1="18" y1="8" x2="220" y2="66" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffb28f" stop-opacity="0.58"/>
+      <stop offset="0.45" stop-color="#f05a22" stop-opacity="0.34"/>
+      <stop offset="1" stop-color="#ff8a5f" stop-opacity="0.22"/>
+    </linearGradient>
+    <radialGradient id="typolice-box-glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(54 22) rotate(21) scale(92 42)">
+      <stop offset="0" stop-color="#f05a22" stop-opacity="0.26"/>
+      <stop offset="0.48" stop-color="#f05a22" stop-opacity="0.10"/>
+      <stop offset="1" stop-color="#f05a22" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="typolice-text-gradient" x1="70" y1="20" x2="164" y2="51" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffd7c6"/>
+      <stop offset="0.32" stop-color="#ffad8a"/>
+      <stop offset="1" stop-color="#ff7c4c"/>
+    </linearGradient>
+    <linearGradient id="typolice-mark-gradient" x1="28" y1="16" x2="54" y2="54" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffd2bf"/>
+      <stop offset="0.52" stop-color="#ff9a73"/>
+      <stop offset="1" stop-color="#f05a22"/>
+    </linearGradient>
+    <filter id="typolice-box-shadow" x="-10%" y="-28%" width="120%" height="156%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="10" stdDeviation="8" flood-color="#000000" flood-opacity="0.22"/>
+      <feDropShadow dx="0" dy="0" stdDeviation="10" flood-color="#f05a22" flood-opacity="0.09"/>
+    </filter>
+    <filter id="typolice-text-glow" x="-12%" y="-44%" width="124%" height="188%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="1" stdDeviation="1.2" flood-color="#000000" flood-opacity="0.30"/>
+      <feDropShadow dx="0" dy="0" stdDeviation="4.5" flood-color="#f05a22" flood-opacity="0.24"/>
+    </filter>
+    <filter id="typolice-mark-glow" x="-40%" y="-40%" width="180%" height="180%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="1" stdDeviation="1.2" flood-color="#000000" flood-opacity="0.32"/>
+      <feDropShadow dx="0" dy="0" stdDeviation="4" flood-color="#ff8a5f" flood-opacity="0.32"/>
+    </filter>
+    <clipPath id="typolice-box-clip">
+      <rect x="8" y="10" width="220" height="52" rx="26"/>
+    </clipPath>
+  </defs>
+
+  <g filter="url(#typolice-box-shadow)">
+    <rect x="8" y="10" width="220" height="52" rx="26" fill="#180f0b"/>
+    <rect x="8" y="10" width="220" height="52" rx="26" fill="#f05a22" fill-opacity="0.075"/>
+    <g clip-path="url(#typolice-box-clip)">
+      <rect x="8" y="10" width="220" height="52" fill="url(#typolice-box-glow)"/>
+      <path d="M23 11h190c6.5 0 11 4.4 13 10" fill="none" stroke="#ffffff" stroke-opacity="0.08" stroke-width="1.4"/>
+    </g>
+    <rect x="8.75" y="10.75" width="218.5" height="50.5" rx="25.25" fill="none" stroke="url(#typolice-border)" stroke-width="1.5"/>
+  </g>
+
+  <g transform="translate(31 18)" filter="url(#typolice-mark-glow)">
+    <path d="m13 0 4.8 8.95 10.03 1.54-7.03 7.34 1.57 10.03L13 23.52 3.63 27.86 5.2 17.83-1.83 10.49 8.2 8.95 13 0Z" fill="none" stroke="url(#typolice-mark-gradient)" stroke-width="2.4" stroke-linejoin="round"/>
+    <circle cx="13" cy="14.8" r="4" fill="none" stroke="#ffceb9" stroke-width="2"/>
+    <path d="M5.7 34h14.6M8.25 29.7h9.5" fill="none" stroke="#ff9a73" stroke-width="2.1" stroke-linecap="round"/>
+  </g>
+
+  <text x="72" y="44"
+        fill="url(#typolice-text-gradient)"
+        filter="url(#typolice-text-glow)"
+        font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Arial, sans-serif"
+        font-size="25"
+        font-weight="700"
+        letter-spacing="0">Typolice</text>
+</svg>
