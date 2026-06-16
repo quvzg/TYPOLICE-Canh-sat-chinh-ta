@@ -1,6 +1,27 @@
-# Typolice — AI Social Content QA Workspace
+# Typolice - Cảnh sát chính tả
 
-Workspace dạng canvas cho team truyền thông/marketing: upload nhiều visual, sắp layout Facebook/LinkedIn, paste caption tiếng Việt, chạy AI QA — lỗi được highlight đúng vị trí trong caption và trên ảnh, hover để xem gợi ý, Accept/Ignore từng lỗi, xuất QA report kèm caption đã sửa.
+BẠN SẼ TIẾP TỤC MẮC LỖI CHÍNH TẢ. Trừ khi bạn sử dụng Typolice - một agent để bắt typo, kiểm tra compliance và giúp bạn vượt qua vòng duyệt nội dung dễ dàng.
+
+Mỗi ngày, các đội ngũ Marketing và Truyền thông phải xử lý hàng chục bài đăng, ấn phẩm và nội dung chiến dịch. Chỉ một lỗi chính tả, một từ ngữ không phù hợp hoặc một chi tiết sai guideline cũng có thể khiến nội dung bị trả về, làm chậm tiến độ và ảnh hưởng đến hình ảnh thương hiệu.
+
+Được xây dựng trên GreenNode AgentBase, Typolice không chỉ kiểm tra lỗi trên cả nội dung và hình ảnh mà còn cho phép đội ngũ tạo lập không gian làm việc riêng cho từng thương hiệu hoặc chiến dịch. Mỗi project có thể được tùy chỉnh bộ guideline, thuật ngữ và quy chuẩn kiểm duyệt riêng, giúp nội dung luôn được đánh giá đúng theo tiêu chuẩn của từng brand.
+
+Thay vì chỉ liệt kê lỗi, Typolice giúp người dùng nhìn thấy bức tranh toàn cảnh: những lỗi nào xuất hiện nhiều nhất, guideline nào thường bị vi phạm và đâu là các điểm nghẽn trong quy trình kiểm duyệt nội dung dưới dạng report PDF hoặc Excel.
+
+Hãy khám phá Typolice và gia nhập Cục Bảo Hộ Quyền Chính Tả ngay hôm nay!
+
+## Tính năng của agent
+
+- Kiểm tra typo, spacing, punctuation, hashtag format, brand term và guideline compliance cho caption tiếng Việt.
+- Scan chữ trên ảnh/poster/banner, bỏ qua logo hoặc vùng trang trí để tập trung vào graphic text cần duyệt.
+- Chạy workflow nhiều bước: rule deterministic trước, AI deep check sau, verifier chống false positive, rồi merge kết quả vào từng card nội dung.
+- Hỗ trợ nhiều caption card và image check card trong cùng một luồng review, mỗi card có issue riêng để dễ theo dõi.
+- Cho phép Accept, Ignore, thêm từ vào guideline/dictionary và xem gợi ý sửa ngay tại vị trí lỗi.
+- Tạo project riêng cho từng chiến dịch/thương hiệu, kèm guideline, terminology và rule kiểm duyệt riêng theo project.
+- Hỗ trợ upload guideline thân thiện hơn cho non-tech user như PDF, DOC/DOCX, Excel/CSV và JSON/Markdown.
+- Xuất report PDF tổng quan và Excel log chi tiết để tracking lỗi, xu hướng vi phạm và hiệu suất kiểm duyệt.
+- Tích hợp GreenNode AgentBase/MaaS với Qwen, MiniMax, Gemma; có Gemini như external fallback cho image text/deep visual review khi cần.
+- Không commit API key vào source; secret được đọc từ runtime environment trên server.
 
 ## Claw-a-thon positioning
 
