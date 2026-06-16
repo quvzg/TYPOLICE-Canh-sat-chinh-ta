@@ -15,8 +15,6 @@ import {
 import { mergeIssues, summarize, validateLLMIssues } from "@/lib/qa/issueMerger";
 import { llmCaptionQA, llmClassifyOcrBoxes, llmImageCrossCheck, llmOcrTextQA, llmVerify, type LLMIssueCandidate } from "@/lib/models/adapters";
 import { getModelConfig, isModelConfigured, isRoleConfigured } from "@/lib/models/gateway";
-import { hasCurrentOcrBoxes, runOcr } from "@/lib/ocr/ocrService";
-import { correctOcrWithVision } from "@/lib/ocr/ocrVisionCorrection";
 import { runLinkSafetyChecks } from "@/lib/qa/linkSafety";
 import { protectedTermsFromBrandKit } from "@/lib/qa/protectedText";
 import {
@@ -932,6 +930,7 @@ export async function POST(req: NextRequest) {
         detail: "Extract visible text boxes from poster/carousel images.",
       })
     : null;
+  const ocrRuntime = qaAssets.length ? await import("@/lib/ocr/ocrService") : null;
 
   for (const asset of qaAssets) {
     const storedName = path.basename(asset.url);
@@ -941,11 +940,12 @@ export async function POST(req: NextRequest) {
       asset.ocr_status === "pending" ||
       asset.ocr_status === "processing" ||
       asset.ocr_status === "failed" ||
-      !hasCurrentOcrBoxes(asset.ocr_boxes)
+      !ocrRuntime?.hasCurrentOcrBoxes(asset.ocr_boxes)
     ) {
       try {
+        if (!ocrRuntime) throw new Error("Image text reader is not available.");
         asset.ocr_status = "processing";
-        asset.ocr_boxes = await runOcr(filePath, asset.id, asset.hash);
+        asset.ocr_boxes = await ocrRuntime.runOcr(filePath, asset.id, asset.hash);
         ocrAssets += 1;
       } catch {
         ocrFailures += 1;
@@ -996,6 +996,7 @@ export async function POST(req: NextRequest) {
 
   if (correctionStep) {
     if (assetsForCorrection.length > 0) {
+      const { correctOcrWithVision } = await import("@/lib/ocr/ocrVisionCorrection");
       const started = Date.now();
       const results = await mapWithConcurrency(assetsForCorrection, VISION_ASSET_CONCURRENCY, async (asset) => {
         try {

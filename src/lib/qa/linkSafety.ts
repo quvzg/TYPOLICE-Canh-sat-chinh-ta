@@ -1,7 +1,6 @@
 import crypto from "crypto";
 import { lookup } from "dns/promises";
 import jsQR from "jsqr";
-import sharp from "sharp";
 import type { Artboard, Asset, Caption, Issue } from "@/types";
 
 type Bbox = NonNullable<Issue["bbox"]>;
@@ -419,6 +418,7 @@ async function issuesForLink(link: ExtractedLink): Promise<{ issues: Issue[]; re
 }
 
 async function decodeQrPayload(filePath: string, asset: Asset, artboardId: string | null): Promise<QrPayload | null> {
+  const { default: sharp } = await import("sharp");
   const image = sharp(filePath).rotate().resize({
     width: MAX_QR_DECODE_DIMENSION,
     height: MAX_QR_DECODE_DIMENSION,
