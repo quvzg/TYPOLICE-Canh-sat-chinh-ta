@@ -21,6 +21,12 @@ RUN npm run build
 FROM node:22-alpine AS runner
 WORKDIR /app
 
+RUN apk add --no-cache curl gzip \
+  && mkdir -p /app/tessdata \
+  && curl -fsSL https://cdn.jsdelivr.net/npm/@tesseract.js-data/eng/4.0.0/eng.traineddata.gz | gzip -dc > /app/tessdata/eng.traineddata \
+  && curl -fsSL https://cdn.jsdelivr.net/npm/@tesseract.js-data/vie/4.0.0/vie.traineddata.gz | gzip -dc > /app/tessdata/vie.traineddata \
+  && apk del curl
+
 ARG AI_GATEWAY_BASE_URL=
 ARG AI_GATEWAY_API_KEY=
 ARG MINIMAX_API_KEY=

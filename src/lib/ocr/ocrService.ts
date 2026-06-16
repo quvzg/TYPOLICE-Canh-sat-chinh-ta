@@ -8,6 +8,10 @@ const storageDir = () => path.join(/* turbopackIgnore: true */ process.cwd(), "s
 const cacheDir = () => path.join(storageDir(), "ocr-cache");
 const workerPath = () =>
   path.join(/* turbopackIgnore: true */ process.cwd(), "node_modules", "tesseract.js", "src", "worker-script", "node", "index.js");
+const corePath = () =>
+  path.join(/* turbopackIgnore: true */ process.cwd(), "node_modules", "tesseract.js-core");
+const langPath = () =>
+  path.join(/* turbopackIgnore: true */ process.cwd(), "tessdata");
 const OCR_CACHE_VERSION = "v4";
 const OCR_TARGET_LONG_EDGE = 1800;
 const OCR_MAX_LONG_EDGE = 2600;
@@ -21,6 +25,9 @@ function getWorker(): Promise<Worker> {
     // 'vie' traineddata is downloaded on first run and cached under storage/
     workerPromise = createWorker("vie+eng", 1, {
       workerPath: workerPath(),
+      corePath: corePath(),
+      langPath: langPath(),
+      gzip: false,
       cachePath: path.join(storageDir(), "tessdata"),
       errorHandler: (err) => {
         console.error("[ocr worker]", err);
