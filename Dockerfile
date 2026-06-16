@@ -9,6 +9,9 @@ RUN apk add --no-cache libc6-compat
 COPY package.json package-lock.json ./
 RUN npm ci
 
+FROM deps AS prod-deps
+RUN npm prune --omit=dev
+
 FROM base AS builder
 RUN apk add --no-cache libc6-compat
 COPY --from=deps /app/node_modules ./node_modules
@@ -66,6 +69,7 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/brand_guidelines ./brand_guidelines
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=prod-deps --chown=nextjs:nodejs /app/node_modules ./node_modules
 
 RUN mkdir -p /app/storage \
   && chown -R nextjs:nodejs /app/storage /app/brand_guidelines
