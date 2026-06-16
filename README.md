@@ -12,6 +12,16 @@ Workspace dạng canvas cho team truyền thông/marketing: upload nhiều visua
 
 **Value:** giảm thao tác lặp lại trước khi publish, giảm lỗi brand/copy, vẫn giữ human-in-loop cho quyết định cuối.
 
+## External model disclosure
+
+Typolice ưu tiên workflow deterministic rules + AgentBase/MaaS-compatible model routing. Bản demo cũng có cấu hình **Google Gemini** như một external model provider cho phần image text scan/deep visual review khi cần tăng độ chính xác đọc chữ trên ảnh.
+
+- External provider used: **Google Gemini API**.
+- Current external role: `MODEL_IMAGE_QA=gemini`.
+- Default external model id: `gemini-2.5-flash-lite`.
+- API key is provided only through runtime environment variables such as `GEMINI_API_KEY`; it is never committed to GitHub, Dockerfile, or client-side code.
+- If deploying to AgentBase, set `GEMINI_API_KEY` and related model routing variables in the runtime environment file or AgentBase runtime env.
+
 ## Chạy app
 
 ```bash
