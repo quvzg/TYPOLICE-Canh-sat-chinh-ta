@@ -779,7 +779,12 @@ function hasFixedCanonicalCase(value: string) {
 
 function isCanonicalProtectedSuggestion(suggestion: string, brandKit: BrandKit) {
   const normalized = suggestion.trim().toLocaleLowerCase("vi-VN");
-  return canonicalProtectedTerms(brandKit).some((term) => term.toLocaleLowerCase("vi-VN") === normalized);
+  return [
+    ...brandKit.brand_terms,
+    ...brandKit.protected_terms,
+    ...brandKit.do_not_change,
+    ...Object.values(brandKit.product_terms),
+  ].some((term) => term.trim().toLocaleLowerCase("vi-VN") === normalized);
 }
 
 function formatCorrectionSuggestion(
