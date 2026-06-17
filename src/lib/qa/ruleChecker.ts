@@ -853,6 +853,78 @@ function vngGroupBrandHits(text: string): RuleHit[] {
   return hits;
 }
 
+interface PublicTextTermRule {
+  canonical: string;
+  patterns: RegExp[];
+  reason: string;
+  confidence: number;
+}
+
+const PUBLIC_TEXT_TERM_RULES: PublicTextTermRule[] = [
+  {
+    canonical: "Việt Nam",
+    patterns: [
+      /(?<![#@\p{L}\p{N}_])(?:vn|vi[eệ]t[\s_-]*n?am)(?![\p{L}\p{N}_])/giu,
+    ],
+    reason: "Nên viết đầy đủ là Việt Nam trong nội dung công khai. Typolice sẽ bỏ qua nếu cụm này nằm trong link, email, hashtag hoặc mention.",
+    confidence: 0.93,
+  },
+  {
+    canonical: "TP.HCM",
+    patterns: [
+      /(?<![#@\p{L}\p{N}_])(?:tphcm|hcmc|tp\.?\s*hcm)(?![\p{L}\p{N}_])/giu,
+    ],
+    reason: "Nên dùng thống nhất format TP.HCM trong nội dung công khai. Typolice sẽ bỏ qua nếu cụm này nằm trong link, email, hashtag hoặc mention.",
+    confidence: 0.9,
+  },
+];
+
+function formatPublicTextTermSuggestion(
+  text: string,
+  start: number,
+  end: number,
+  canonical: string,
+  brandKit: BrandKit
+) {
+  if (hasFixedCanonicalCase(canonical)) return canonical;
+  const excludedRanges = [
+    ...findUrlRanges(text),
+    ...findProtectedTermRanges(text, canonicalProtectedTerms(brandKit)),
+  ];
+  return isUppercaseStyleHeadingAt(text, start, end, excludedRanges)
+    ? canonical.toLocaleUpperCase("vi-VN")
+    : canonical;
+}
+
+function publicTextTermHits(text: string, brandKit: BrandKit): RuleHit[] {
+  const hits: RuleHit[] = [];
+
+  for (const rule of PUBLIC_TEXT_TERM_RULES) {
+    for (const pattern of rule.patterns) {
+      pattern.lastIndex = 0;
+      for (const m of text.matchAll(pattern)) {
+        const start = m.index!;
+        const end = start + m[0].length;
+        const suggestion = formatPublicTextTermSuggestion(text, start, end, rule.canonical, brandKit);
+        if (normalizedVariant(m[0]) === normalizedVariant(suggestion)) continue;
+        hits.push({
+          start,
+          end,
+          original: m[0],
+          suggestion,
+          type: "style",
+          severity: "medium",
+          reason: rule.reason,
+          confidence: rule.confidence,
+          is_definite_error: true,
+        });
+      }
+    }
+  }
+
+  return hits;
+}
+
 function formatTextVariantSuggestion(original: string, canonical: string, text?: string, start?: number) {
   if (hasFixedCanonicalCase(canonical)) return canonical;
   if (text && start !== undefined && isUppercaseStyleHeadingAt(text, start, start + original.length, [
@@ -2001,6 +2073,9 @@ export function runRuleChecker(
     addHit(hit);
   }
   for (const hit of vngGroupBrandHits(text)) {
+    addHit(hit);
+  }
+  for (const hit of publicTextTermHits(text, brandKit)) {
     addHit(hit);
   }
   for (const hit of numericAndDateHits(text)) {

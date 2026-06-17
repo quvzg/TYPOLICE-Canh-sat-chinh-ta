@@ -254,6 +254,27 @@ assert.ok(hasIssue("vng corporation đồng hành cùng cộng đồng.", "vng c
 assert.ok(hasIssue("VNG CORP ĐỒNG HÀNH\nCùng cộng đồng.", "VNG CORP", "VNG GROUP"), "VNG Corp should match uppercase heading format");
 assert.ok(hasIssue("Theo dõi #VNGCorp ngay.", "#VNGCorp", "#VNGGroup"), "VNG Corp hashtag should normalize to #VNGGroup");
 assert.ok(hasIssue("Theo dõi #VNG_Corporation ngay.", "#VNG_Corporation", "#VNGGroup"), "VNG Corporation hashtag variants should normalize to #VNGGroup");
+assert.ok(hasIssue("Thị trường vn đang tăng trưởng.", "vn", "Việt Nam"), "standalone vn should be expanded to Việt Nam in text");
+assert.ok(hasIssue("Đội VietNam đã sẵn sàng.", "VietNam", "Việt Nam"), "VietNam should be normalized to Việt Nam");
+assert.ok(hasIssue("Đội Viet am đã sẵn sàng.", "Viet am", "Việt Nam"), "Viet am OCR/typing variant should normalize to Việt Nam");
+assert.ok(hasIssue("VIETNAM DẪN ĐẦU\nCùng nhau bứt phá.", "VIETNAM", "VIỆT NAM"), "Vietnam in uppercase heading should keep uppercase heading format");
+assert.ok(hasIssue("Sự kiện tại TPHCM tuần này.", "TPHCM", "TP.HCM"), "TPHCM should normalize to TP.HCM");
+assert.ok(hasIssue("Workshop ở HCMC tuần này.", "HCMC", "TP.HCM"), "HCMC should normalize to TP.HCM");
+assert.equal(
+  issuesFor("Xem https://vng.com.vn và https://vietnam.vn ngay.").filter((issue) => ["vn", "vietnam"].includes(issue.original.toLocaleLowerCase("vi-VN"))).length,
+  0,
+  "vn/Vietnam inside links must not be normalized"
+);
+assert.equal(
+  issuesFor("Theo dõi #VietNam và @VietNam để cập nhật.").filter((issue) => issue.suggestion === "Việt Nam").length,
+  0,
+  "vn/VietNam inside hashtag or mention must not be normalized"
+);
+assert.equal(
+  issuesFor("Voucher 100 vnđ hôm nay.").filter((issue) => issue.original.toLocaleLowerCase("vi-VN") === "vn").length,
+  0,
+  "vn inside currency shorthand must not be normalized as country name"
+);
 assert.ok(hasIssue("Đăng ký hôm nay\nĐiền form đk tại link bên dưới.", "đk", "đăng ký"), "mixed đăng ký abbreviation should be normalized");
 assert.ok(hasIssue("Theo dõi FB và Facebook để cập nhật tin mới.", "FB", "Facebook"), "mixed social platform abbreviations should be normalized");
 assert.ok(hasIssue("Sự kiện tại TPHCM\nĐịa điểm ở TP.HCM sẽ gửi sau.", "TPHCM", "TP.HCM"), "mixed TP.HCM variants should be normalized");
