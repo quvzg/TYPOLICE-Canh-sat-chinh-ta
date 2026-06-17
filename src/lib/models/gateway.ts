@@ -78,6 +78,11 @@ function apiKeyFor(family: string): string | undefined {
   return byFamily[family] ?? envValue("AI_GATEWAY_API_KEY");
 }
 
+function providerSupportsChatTemplateKwargs(active: { base: string; fromGreenNodeFallback?: boolean }): boolean {
+  if (active.fromGreenNodeFallback) return true;
+  return !/generativelanguage\.googleapis\.com\/v1beta\/openai/i.test(active.base);
+}
+
 export function isRoleConfigured(role: ModelRole): boolean {
   const family = familyFor(role);
   return Boolean(baseUrlFor(family) && apiKeyFor(family)) || canUseGreenNodeAipFallback(family);
@@ -167,7 +172,9 @@ export async function chat(
           messages,
           temperature: opts.temperature ?? 0.1,
           max_tokens: opts.maxTokens ?? 2048,
-          chat_template_kwargs: { enable_thinking: false },
+          ...(providerSupportsChatTemplateKwargs(active)
+            ? { chat_template_kwargs: { enable_thinking: false } }
+            : {}),
         }),
       });
       if (!res.ok) {
