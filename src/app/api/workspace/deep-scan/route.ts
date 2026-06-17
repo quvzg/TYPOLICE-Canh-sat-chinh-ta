@@ -7,6 +7,7 @@ import {
 } from "@/lib/qa/deepScanJobs";
 import { deviceScopeFromRequest } from "@/lib/server/db";
 import type { AgentRunTrace, Issue } from "@/types";
+import { POST as runWorkspaceQa } from "../run-qa/route";
 
 export async function POST(req: NextRequest) {
   const scope = deviceScopeFromRequest(req);
@@ -31,7 +32,6 @@ export async function POST(req: NextRequest) {
     content_fingerprint: contentFingerprint,
   });
 
-  const origin = req.nextUrl.origin;
   const runBody = {
     project_id: projectId,
     visual_qa: true,
@@ -44,14 +44,14 @@ export async function POST(req: NextRequest) {
 
   void (async () => {
     try {
-      const res = await fetch(`${origin}/api/workspace/run-qa`, {
+      const res = await runWorkspaceQa(new NextRequest(new URL("/api/workspace/run-qa", req.nextUrl.origin), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "x-typolice-device-id": scope,
         },
         body: JSON.stringify(runBody),
-      });
+      }));
       if (!res.ok) {
         const text = await res.text().catch(() => "");
         throw new Error(text || `Deep scan failed with HTTP ${res.status}`);
