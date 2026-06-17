@@ -186,7 +186,7 @@ interface QAState {
   deepQaRunningTargets: Record<string, boolean>;
   cardScanStatus: Record<string, CardScanStatus>;
 
-  load: () => Promise<void>;
+  load: (options?: { preferDefaultChecker?: boolean }) => Promise<void>;
   resetSpace: () => Promise<void>;
   setCaption: (text: string) => void;
   analyzeCaption: (useLLM: boolean) => Promise<void>;
@@ -686,20 +686,46 @@ export const useQAStore = create<QAState>((set, get) => ({
   deepQaRunningTargets: {},
   cardScanStatus: {},
 
-  load: async () => {
-    const [res, projectsRes] = await Promise.all([
-      apiFetch("/api/workspace"),
-      apiFetch("/api/projects"),
-    ]);
-    const data = await res.json();
+  load: async (options) => {
+    const projectsRes = await apiFetch("/api/projects");
     const projectsData = await projectsRes.json().catch(() => ({ projects: [], active_project_id: null }));
+    let projects: ProjectSummary[] = Array.isArray(projectsData.projects) ? projectsData.projects : [];
+    let activeProjectId = typeof projectsData.active_project_id === "string" ? projectsData.active_project_id : null;
+
+    if (options?.preferDefaultChecker) {
+      const activeProject = projects.find((project) => project.id === activeProjectId);
+      if (activeProject?.kind !== "check") {
+        const latestCheck = projects
+          .filter((project) => project.kind === "check")
+          .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))[0];
+        const defaultCheckRes = latestCheck
+          ? await apiFetch("/api/projects", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "switch", project_id: latestCheck.id }),
+            })
+          : await apiFetch("/api/projects", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "create", kind: "check", name: checkName() }),
+            });
+        if (defaultCheckRes.ok) {
+          const defaultCheckData = await defaultCheckRes.json().catch(() => null);
+          projects = Array.isArray(defaultCheckData?.projects) ? defaultCheckData.projects : projects;
+          activeProjectId = typeof defaultCheckData?.active_project_id === "string" ? defaultCheckData.active_project_id : activeProjectId;
+        }
+      }
+    }
+
+    const workspaceUrl = activeProjectId ? `/api/workspace?project_id=${encodeURIComponent(activeProjectId)}` : "/api/workspace";
+    const res = await apiFetch(workspaceUrl);
+    const data = await res.json();
     const ws: Workspace = data.workspace;
     const normalized = normalizeArtboards(ws.artboards);
-    const activeProjectId = typeof projectsData.active_project_id === "string" ? projectsData.active_project_id : null;
     set({
       loaded: true,
       appMode: ws.kind === "check" ? "check" : "project",
-      projects: Array.isArray(projectsData.projects) ? projectsData.projects : [],
+      projects,
       activeProjectId,
       workspaceName: ws.name,
       imageCheckLabel: normalizeImageCheckLabel(ws.image_check_label),

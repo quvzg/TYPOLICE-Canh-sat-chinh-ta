@@ -46,7 +46,7 @@ export default function WorkspacePage() {
   const [isPhoneViewport, setIsPhoneViewport] = useState<boolean | null>(null);
 
   useEffect(() => {
-    void load();
+    void load({ preferDefaultChecker: true });
   }, [load]);
 
   useEffect(() => {
