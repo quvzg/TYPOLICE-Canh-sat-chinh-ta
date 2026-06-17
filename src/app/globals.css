@@ -1407,8 +1407,8 @@ html[data-theme="light"] *::-webkit-scrollbar-thumb:hover {
   border-radius: 9999px;
   background: transparent;
   color: #8b8b94;
-  opacity: 0;
-  pointer-events: none;
+  opacity: 0.18;
+  pointer-events: auto;
   transition:
     background-color 140ms ease,
     color 140ms ease,
