@@ -824,6 +824,35 @@ function formatDictionarySuggestion(
   return suggestion;
 }
 
+function vngGroupSuggestionForContext(text: string, start: number, end: number) {
+  const excludedRanges = [
+    ...findUrlRanges(text),
+    ...findProtectedTermRanges(text, ["VNG Group"]),
+  ];
+  return isUppercaseStyleHeadingAt(text, start, end, excludedRanges)
+    ? "VNG GROUP"
+    : "VNG Group";
+}
+
+function vngGroupBrandHits(text: string): RuleHit[] {
+  const hits: RuleHit[] = [];
+  const re = /(?<![#\p{L}\p{N}_])vng\s*(?:corp(?:oration)?)(?![\p{L}\p{N}_])/giu;
+  for (const m of text.matchAll(re)) {
+    hits.push({
+      start: m.index!,
+      end: m.index! + m[0].length,
+      original: m[0],
+      suggestion: vngGroupSuggestionForContext(text, m.index!, m.index! + m[0].length),
+      type: "brand_term",
+      severity: "high",
+      reason: "Theo guideline, VNG Corp/VNG Corporation nên viết là VNG Group.",
+      confidence: 0.97,
+      is_definite_error: true,
+    });
+  }
+  return hits;
+}
+
 function formatTextVariantSuggestion(original: string, canonical: string, text?: string, start?: number) {
   if (hasFixedCanonicalCase(canonical)) return canonical;
   if (text && start !== undefined && isUppercaseStyleHeadingAt(text, start, start + original.length, [
@@ -1443,6 +1472,20 @@ function socialTokenHits(text: string, brandKit: BrandKit): RuleHit[] {
     });
   }
 
+  for (const m of text.matchAll(/#vng_?(?:corp(?:oration)?)(?![\p{L}\p{N}_])/giu)) {
+    hits.push({
+      start: m.index!,
+      end: m.index! + m[0].length,
+      original: m[0],
+      suggestion: "#VNGGroup",
+      type: "hashtag",
+      severity: "high",
+      reason: "Hashtag liên quan VNG Corp/VNG Corporation nên dùng #VNGGroup.",
+      confidence: 0.97,
+      is_definite_error: true,
+    });
+  }
+
   for (const m of text.matchAll(/([\p{L}\p{N}])(#(?:[\p{L}\p{N}_]+))/gu)) {
     hits.push({
       start: m.index!,
@@ -1955,6 +1998,9 @@ export function runRuleChecker(
     addHit(hit);
   }
   for (const hit of socialTokenHits(text, brandKit)) {
+    addHit(hit);
+  }
+  for (const hit of vngGroupBrandHits(text)) {
     addHit(hit);
   }
   for (const hit of numericAndDateHits(text)) {

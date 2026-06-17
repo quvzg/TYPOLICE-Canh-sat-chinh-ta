@@ -249,6 +249,11 @@ assert.ok(hasIssue("Hình thức tham gia| Cá nhân", "Hình thức tham gia| C
 assert.ok(hasIssue("1. Một\n2) Hai", "2)", "2."), "mixed numbered delimiters should be normalized");
 assert.ok(hasIssue("- Một\n• Hai", "•", "-"), "mixed bullet markers should be normalized");
 assert.ok(hasIssue("CTY ABC TUYỂN DỤNG\nCông ty có nhiều vị trí mới.", "CTY", "CÔNG TY"), "heading abbreviation should be normalized in heading uppercase format");
+assert.ok(hasIssue("VNG Corp đồng hành cùng cộng đồng.", "VNG Corp", "VNG Group"), "VNG Corp should normalize to VNG Group in text");
+assert.ok(hasIssue("vng corporation đồng hành cùng cộng đồng.", "vng corporation", "VNG Group"), "VNG Corporation variants should normalize to VNG Group in text");
+assert.ok(hasIssue("VNG CORP ĐỒNG HÀNH\nCùng cộng đồng.", "VNG CORP", "VNG GROUP"), "VNG Corp should match uppercase heading format");
+assert.ok(hasIssue("Theo dõi #VNGCorp ngay.", "#VNGCorp", "#VNGGroup"), "VNG Corp hashtag should normalize to #VNGGroup");
+assert.ok(hasIssue("Theo dõi #VNG_Corporation ngay.", "#VNG_Corporation", "#VNGGroup"), "VNG Corporation hashtag variants should normalize to #VNGGroup");
 assert.ok(hasIssue("Đăng ký hôm nay\nĐiền form đk tại link bên dưới.", "đk", "đăng ký"), "mixed đăng ký abbreviation should be normalized");
 assert.ok(hasIssue("Theo dõi FB và Facebook để cập nhật tin mới.", "FB", "Facebook"), "mixed social platform abbreviations should be normalized");
 assert.ok(hasIssue("Sự kiện tại TPHCM\nĐịa điểm ở TP.HCM sẽ gửi sau.", "TPHCM", "TP.HCM"), "mixed TP.HCM variants should be normalized");
