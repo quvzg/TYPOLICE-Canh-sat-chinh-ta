@@ -183,6 +183,14 @@ assert.ok(
   hasIssue("CHỈNH chu CÙNG TEAM\nƯu đãi hôm nay.", "CHỈNH chu", "CHỈN CHU"),
   "spelling fixes inside uppercase-style headings should preserve uppercase format"
 );
+assert.ok(
+  hasIssue("CHÍNH THỨC KHỞI ĐỘNG GREEN NODE cuộc thi AI hackathon", "GREEN NODE", "GREENNODE"),
+  "brand fixes inside uppercase-style headings should preserve uppercase format"
+);
+assert.ok(
+  hasIssue("CHÍNH THỨC KHỞI ĐỘNG GREEN NODE cuộc thi AI hackathon", "cuộc thi AI hackathon", "CUỘC THI AI HACKATHON"),
+  "lowercase phrase inside uppercase-style headings should be flagged as one inconsistent phrase"
+);
 assert.equal(
   issuesFor("SIÊU SALE VNGGames\nƯu đãi hôm nay.").some((issue) => issue.original === "VNGGames" && issue.suggestion === "VNGGAMES"),
   false,

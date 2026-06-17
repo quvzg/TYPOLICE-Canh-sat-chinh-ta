@@ -717,7 +717,20 @@ function isUppercaseStyleHeadingLine(
   if (words.length === 0 || words.length > 14 || line.length > 120) return false;
   if (/[:;]|\bhttps?:\/\//iu.test(line)) return false;
   const stats = uppercaseHeadingStats(line, lineStart, excludedRanges);
-  return stats.total >= 4 && stats.upper >= 4 && stats.upper / stats.total >= 0.65;
+  let leadingUppercaseWords = 0;
+  for (const word of words) {
+    const letters = word.match(/\p{L}/gu) ?? [];
+    if (letters.length === 0) continue;
+    if (!letters.some(isLowercaseLetter) && letters.some(isUppercaseLetter)) {
+      leadingUppercaseWords += 1;
+      continue;
+    }
+    break;
+  }
+  const upperRatio = stats.total > 0 ? stats.upper / stats.total : 0;
+  return stats.total >= 4
+    && stats.upper >= 4
+    && (upperRatio >= 0.65 || (leadingUppercaseWords >= 3 && upperRatio >= 0.55));
 }
 
 function isUppercaseStyleHeadingAt(
@@ -750,23 +763,69 @@ function headingUppercaseConsistencyHits(text: string, brandKit: BrandKit): Rule
     const lineStart = offset + trimOffset;
     if (!isUppercaseStyleHeadingLine(text, line, lineStart, excludedRanges)) return;
 
-    for (const match of line.matchAll(/[\p{L}\p{N}][\p{L}\p{N}_-]*/gu)) {
+    const tokens = Array.from(line.matchAll(/[\p{L}\p{N}][\p{L}\p{N}_-]*/gu)).map((match) => {
       const start = lineStart + match.index!;
       const end = start + match[0].length;
-      if (rangeOverlapsAny({ start, end }, excludedRanges)) continue;
       const letters = match[0].match(/\p{L}/gu) ?? [];
-      if (!letters.some(isLowercaseLetter)) continue;
-      hits.push({
+      const hasLower = letters.some(isLowercaseLetter);
+      return {
         start,
         end,
         original: match[0],
-        suggestion: match[0].toLocaleUpperCase("vi-VN"),
+        hasLower,
+        overlapsExcluded: rangeOverlapsAny({ start, end }, excludedRanges),
+      };
+    });
+
+    for (const token of tokens) {
+      if (token.overlapsExcluded) continue;
+      if (!token.hasLower) continue;
+      hits.push({
+        start: token.start,
+        end: token.end,
+        original: token.original,
+        suggestion: token.original.toLocaleUpperCase("vi-VN"),
         type: "style",
         severity: "medium",
         reason: "Heading đang dùng format viết hoa, nên các chữ trong heading cần đồng bộ uppercase.",
         confidence: 0.9,
         is_definite_error: false,
       });
+    }
+
+    for (let i = 0; i < tokens.length; i += 1) {
+      const token = tokens[i];
+      if (!token.hasLower || token.overlapsExcluded) continue;
+
+      let endTokenIndex = i;
+      let lowerTokenCount = 0;
+      for (let j = i; j < tokens.length; j += 1) {
+        const current = tokens[j];
+        const previous = tokens[j - 1];
+        if (current.overlapsExcluded && current.hasLower) break;
+        if (previous) {
+          const separator = text.slice(previous.end, current.start);
+          if (!/^\s+$/u.test(separator)) break;
+        }
+        if (current.hasLower && !current.overlapsExcluded) lowerTokenCount += 1;
+        endTokenIndex = j;
+      }
+
+      if (lowerTokenCount < 2) continue;
+      const endToken = tokens[endTokenIndex];
+      const original = text.slice(token.start, endToken.end);
+      hits.push({
+        start: token.start,
+        end: endToken.end,
+        original,
+        suggestion: original.toLocaleUpperCase("vi-VN"),
+        type: "style",
+        severity: "medium",
+        reason: "Cụm trong heading chưa đồng bộ uppercase với phần còn lại.",
+        confidence: 0.9,
+        is_definite_error: false,
+      });
+      i = endTokenIndex;
     }
   });
 
@@ -795,7 +854,6 @@ function formatCorrectionSuggestion(
   suggestion: string,
   brandKit: BrandKit
 ) {
-  if (isCanonicalProtectedSuggestion(suggestion, brandKit) || hasFixedCanonicalCase(suggestion)) return suggestion;
   const excludedRanges = [
     ...findUrlRanges(text),
     ...findProtectedTermRanges(text, canonicalProtectedTerms(brandKit)),
@@ -803,6 +861,7 @@ function formatCorrectionSuggestion(
   if (isUppercaseStyleHeadingAt(text, start, end, excludedRanges)) {
     return suggestion.toLocaleUpperCase("vi-VN");
   }
+  if (isCanonicalProtectedSuggestion(suggestion, brandKit) || hasFixedCanonicalCase(suggestion)) return suggestion;
   return preserveSimpleCase(original, suggestion);
 }
 
@@ -813,7 +872,6 @@ function formatDictionarySuggestion(
   suggestion: string,
   brandKit: BrandKit
 ) {
-  if (isCanonicalProtectedSuggestion(suggestion, brandKit) || hasFixedCanonicalCase(suggestion)) return suggestion;
   const excludedRanges = [
     ...findUrlRanges(text),
     ...findProtectedTermRanges(text, canonicalProtectedTerms(brandKit)),
@@ -821,6 +879,7 @@ function formatDictionarySuggestion(
   if (isUppercaseStyleHeadingAt(text, start, end, excludedRanges)) {
     return suggestion.toLocaleUpperCase("vi-VN");
   }
+  if (isCanonicalProtectedSuggestion(suggestion, brandKit) || hasFixedCanonicalCase(suggestion)) return suggestion;
   return suggestion;
 }
 
@@ -2301,7 +2360,7 @@ export function runRuleChecker(
         start: m.index!,
         end: m.index! + m[0].length,
         original: m[0],
-        suggestion: right,
+        suggestion: formatCorrectionSuggestion(text, m.index!, m.index! + m[0].length, m[0], right, brandKit),
         type: "brand_term",
         severity: "high",
         reason: `Tên sản phẩm/dịch vụ phải viết là ${right}.`,
