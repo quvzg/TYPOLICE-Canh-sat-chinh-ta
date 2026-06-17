@@ -1,5 +1,11 @@
 import type { Issue } from "@/types";
 
+export function requiresManualIssueCheck(issue: Issue): boolean {
+  return issue.severity === "needs_review" ||
+    issue.status === "needs_human_review" ||
+    issue.type === "ocr_low_confidence";
+}
+
 export function friendlyIssueType(issue: Issue): string {
   if (issue.type === "ocr_low_confidence") return "đọc chữ trên ảnh";
   return issue.type;

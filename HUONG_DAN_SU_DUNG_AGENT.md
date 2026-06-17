@@ -1,6 +1,6 @@
 # Hướng Dẫn Sử Dụng ClawProof Agent
 
-ClawProof là workspace QA cho social content. Team có thể upload poster/banner, paste caption tiếng Việt, sắp layout Facebook/LinkedIn, chạy agent để bắt lỗi caption, text trên ảnh, hashtag, brand term, link/QR và xuất report trước khi publish.
+ClawProof là workspace QA cho social content. Team có thể upload poster/banner, paste caption tiếng Việt, sắp layout Facebook/LinkedIn, chạy agent để bắt lỗi caption, text trên ảnh, hashtag, brand term và xuất report trước khi publish.
 
 ## 1. Mở app
 
@@ -75,7 +75,6 @@ Tab **Agent** hiển thị rõ các bước agent đã chạy:
 - Caption rules.
 - Qwen caption QA nếu được cấu hình.
 - MiniMax verifier để giảm false positive.
-- Link/QR safety.
 - OCR image text.
 - Vision OCR correction nếu cần.
 - Image text QA bằng rules/LLM.
@@ -130,4 +129,3 @@ Dùng report này để gửi lại cho content/design team trước khi publish
 - Upload và workspace data được lưu trên server runtime trong thư mục `storage/`.
 - Chưa có multi-user permission, login, realtime collaboration, export PNG/PDF artboard hay auto-post.
 - Lỗi text trên ảnh thường cần sửa trong file design gốc, app chỉ đánh dấu và ghi nhận issue.
-

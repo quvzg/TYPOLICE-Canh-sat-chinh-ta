@@ -41,16 +41,26 @@ function scanTone(phase: ScanPhase) {
 }
 
 function scanCoverageLabel(status: CardScanStatus) {
+  const coverageText = status.coverage === "still_checking"
+    ? "Still checking"
+    : status.coverage === "needs_review"
+      ? "Needs review"
+      : status.coverage === "could_not_fully_read"
+        ? "Could not fully read"
+        : status.coverage === "checked"
+          ? "Checked"
+          : null;
+  const withCoverage = (count: string | null) => coverageText && count ? `${coverageText} · ${count}` : coverageText ?? count;
   if (status.phase === "deep_running" && typeof status.fastIssueCount === "number") {
-    return `${status.fastIssueCount} issues found`;
+    return withCoverage(`${status.fastIssueCount} issues found`);
   }
   if (status.phase === "complete" && typeof status.finalIssueCount === "number") {
-    return `${status.finalIssueCount} open issues`;
+    return withCoverage(`${status.finalIssueCount} open issues`);
   }
   if (status.phase === "failed" && typeof status.fastIssueCount === "number") {
-    return `${status.fastIssueCount} fast issues kept`;
+    return withCoverage(`${status.fastIssueCount} fast issues kept`);
   }
-  return null;
+  return coverageText;
 }
 
 function ScanStatusLine({ status }: { status?: CardScanStatus }) {

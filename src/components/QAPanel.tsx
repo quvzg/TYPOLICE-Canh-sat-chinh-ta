@@ -3,7 +3,7 @@
 import { type CSSProperties, type FormEvent, useEffect, useMemo, useState } from "react";
 import { useQAStore, type AppMode, type GuidelineInput, type QATab } from "@/lib/store";
 import { SEVERITY_COLORS, SEVERITY_ORDER } from "@/lib/presets";
-import { friendlyIssueReason, friendlyIssueType } from "@/lib/qa/issueDisplay";
+import { friendlyIssueReason, friendlyIssueType, requiresManualIssueCheck } from "@/lib/qa/issueDisplay";
 import { applyPatches } from "@/lib/qa/patchService";
 import { formatFileSize } from "@/lib/uploadLimits";
 import ReportDownloadButton from "@/components/ReportDownloadButton";
@@ -96,6 +96,7 @@ function AgentTab() {
 
 function IssueCard({ issue }: { issue: Issue }) {
   const acceptIssue = useQAStore((s) => s.acceptIssue);
+  const checkIssue = useQAStore((s) => s.checkIssue);
   const ignoreIssue = useQAStore((s) => s.ignoreIssue);
   const addToDictionary = useQAStore((s) => s.addToDictionary);
   const selectIssue = useQAStore((s) => s.selectIssue);
@@ -107,6 +108,7 @@ function IssueCard({ issue }: { issue: Issue }) {
   const color = SEVERITY_COLORS[issue.severity];
   const done = issue.status === "accepted" || issue.status === "ignored" || issue.status === "resolved";
   const isWarningOnly = issue.original === issue.suggestion;
+  const manualCheck = requiresManualIssueCheck(issue);
   const issueType = friendlyIssueType(issue);
   const reason = friendlyIssueReason(issue.reason);
 
@@ -165,23 +167,31 @@ function IssueCard({ issue }: { issue: Issue }) {
         <span className="text-[10px] font-medium uppercase text-zinc-500">{issue.status}</span>
       ) : (
         <div className="flex gap-1.5" onClick={(e) => e.stopPropagation()}>
-          {!isWarningOnly && issue.source_type === "caption" && (
-            <button onClick={() => acceptIssue(issue.issue_id)} className="cp-success-button cp-button-xs">
-              Accept
+          {manualCheck ? (
+            <button onClick={() => checkIssue(issue.issue_id)} className="cp-success-button cp-button-xs" title="Đánh dấu đã tự kiểm tra — không áp dụng gợi ý tự động">
+              Checked
             </button>
-          )}
-          {issue.source_type === "image" && (
-            <button onClick={() => acceptIssue(issue.issue_id)} className="cp-success-button cp-button-xs" title="Đánh dấu đã ghi nhận — cần sửa file ảnh gốc">
-              Accept note
-            </button>
-          )}
-          <button onClick={() => ignoreIssue(issue.issue_id)} className="cp-muted-button cp-button-xs">
-            Ignore
-          </button>
-          {(issue.type === "brand_term" || issue.type === "spelling") && (
-            <button onClick={() => void addToDictionary(issue.issue_id)} className="cp-info-button cp-button-xs">
-              + Dict
-            </button>
+          ) : (
+            <>
+              {!isWarningOnly && issue.source_type === "caption" && (
+                <button onClick={() => acceptIssue(issue.issue_id)} className="cp-success-button cp-button-xs">
+                  Accept
+                </button>
+              )}
+              {issue.source_type === "image" && (
+                <button onClick={() => acceptIssue(issue.issue_id)} className="cp-success-button cp-button-xs" title="Đánh dấu đã ghi nhận — cần sửa file ảnh gốc">
+                  Accept note
+                </button>
+              )}
+              <button onClick={() => ignoreIssue(issue.issue_id)} className="cp-muted-button cp-button-xs">
+                Ignore
+              </button>
+              {(issue.type === "brand_term" || issue.type === "spelling") && (
+                <button onClick={() => void addToDictionary(issue.issue_id)} className="cp-info-button cp-button-xs">
+                  + Dict
+                </button>
+              )}
+            </>
           )}
         </div>
       )}

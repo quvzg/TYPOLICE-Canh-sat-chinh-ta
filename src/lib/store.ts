@@ -11,6 +11,7 @@ import { validateImageUploadFiles } from "@/lib/uploadLimits";
 export type QATab = "agent" | "issues" | "corrected" | "brandkit" | "export";
 export type AppMode = "check" | "project";
 export type ScanPhase = "fast_running" | "deep_running" | "complete" | "needs_rerun" | "failed";
+export type CoverageStatus = "checked" | "still_checking" | "needs_review" | "could_not_fully_read";
 export interface CardScanStatus {
   phase: ScanPhase;
   message: string;
@@ -18,6 +19,7 @@ export interface CardScanStatus {
   updatedAt: string;
   fastIssueCount?: number;
   finalIssueCount?: number;
+  coverage?: CoverageStatus;
 }
 export interface ProjectSummary {
   id: string;
@@ -194,6 +196,7 @@ interface QAState {
   runOcr: (assetId: string) => Promise<void>;
   runQA: (mode?: boolean | "smart", targetArtboardId?: string) => Promise<void>;
   acceptIssue: (issueId: string) => void;
+  checkIssue: (issueId: string) => void;
   ignoreIssue: (issueId: string) => void;
   addToDictionary: (issueId: string) => Promise<void>;
   addGuideline: (input: GuidelineInput) => Promise<boolean>;
@@ -226,6 +229,64 @@ let persistTimer: ReturnType<typeof setTimeout> | null = null;
 let analyzeTimer: ReturnType<typeof setTimeout> | null = null;
 let createCheckInFlight: Promise<void> | null = null;
 const deepQaInFlightByTarget = new Map<string, Promise<void>>();
+const cardRunCache = new Map<string, {
+  issues: Issue[];
+  assets: Asset[];
+  agentTrace: AgentRunTrace | null;
+  finalIssueCount: number;
+  cachedAt: string;
+}>();
+
+function stableClientHash(value: unknown): string {
+  const text = JSON.stringify(value);
+  let hash = 5381;
+  for (let i = 0; i < text.length; i += 1) {
+    hash = ((hash << 5) + hash) ^ text.charCodeAt(i);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function brandKitSignature(brandKit: BrandKit | null) {
+  if (!brandKit) return "no-brand-kit";
+  return stableClientHash({
+    brand_terms: brandKit.brand_terms,
+    protected_terms: brandKit.protected_terms,
+    preferred_spellings: brandKit.preferred_spellings,
+    product_terms: brandKit.product_terms,
+    preferred_wording: brandKit.preferred_wording,
+    do_not_change: brandKit.do_not_change,
+    style_notes: brandKit.style_notes,
+  });
+}
+
+function runCacheKey(s: QAState, targetKey: string, contentSnapshot: string, mode: boolean | "smart") {
+  return [
+    "run-cache-v2",
+    s.activeProjectId ?? "draft",
+    targetKey,
+    mode === "smart" ? "smart" : mode === true ? "visual" : "fast",
+    s.llmConfigured ? "ai" : "rules",
+    brandKitSignature(s.brandKit),
+    stableClientHash(contentSnapshot),
+  ].join("|");
+}
+
+function issueDecisionKey(issue: Issue) {
+  return `${issue.source_type}|${issue.source_id}|${issue.artboard_id ?? ""}|${issue.box_id ?? ""}|${issue.original}|${issue.suggestion}`;
+}
+
+function preserveCurrentDecisions(cachedIssues: Issue[], currentIssues: Issue[]): Issue[] {
+  const decisions = new Map(
+    currentIssues
+      .filter((issue) => issue.status === "accepted" || issue.status === "ignored" || issue.status === "resolved")
+      .map((issue) => [issueDecisionKey(issue), issue.status])
+  );
+  if (decisions.size === 0) return cachedIssues;
+  return cachedIssues.map((issue) => {
+    const status = decisions.get(issueDecisionKey(issue));
+    return status ? { ...issue, status } : issue;
+  });
+}
 
 function runTargetKey(targetArtboardId?: string) {
   return targetArtboardId?.trim() || "__workspace__";
@@ -248,6 +309,42 @@ function issueBelongsToRunTarget(issue: Issue, targetKey: string) {
 
 function openIssueCountForTarget(issues: Issue[], targetKey: string) {
   return issues.filter((issue) => issue.status === "open" && issueBelongsToRunTarget(issue, targetKey)).length;
+}
+
+function manualReviewIssueCountForTarget(issues: Issue[], targetKey: string) {
+  return issues.filter((issue) =>
+    (issue.status === "open" || issue.status === "needs_human_review") &&
+    issueBelongsToRunTarget(issue, targetKey) &&
+    (
+      issue.severity === "needs_review" ||
+      issue.type === "ocr_low_confidence" ||
+      issue.status === "needs_human_review"
+    )
+  ).length;
+}
+
+function assetIdsForRunTarget(targetKey: string, artboards: Artboard[]) {
+  if (targetKey === "__workspace__") return null;
+  const artboard = artboards.find((item) => item.id === targetKey);
+  if (!artboard || artboardKind(artboard) !== "visual") return null;
+  return new Set(artboard.layers.map((layer) => layer.asset_id));
+}
+
+function coverageForRun(targetKey: string, issues: Issue[], assets: Asset[], artboards: Artboard[], deepRunning = false): CoverageStatus {
+  if (deepRunning) return "still_checking";
+  const scopedAssetIds = assetIdsForRunTarget(targetKey, artboards);
+  const scopedAssets = scopedAssetIds
+    ? assets.filter((asset) => scopedAssetIds.has(asset.id))
+    : targetKey === "__workspace__"
+      ? assets
+      : [];
+  if (scopedAssets.some((asset) => asset.ocr_status === "failed")) {
+    return "could_not_fully_read";
+  }
+  if (scopedAssets.some((asset) => asset.ocr_status === "low_confidence" || asset.ocr_boxes.length === 0)) {
+    return "needs_review";
+  }
+  return manualReviewIssueCountForTarget(issues, targetKey) > 0 ? "needs_review" : "checked";
 }
 
 function targetFingerprint(s: QAState, targetArtboardId?: string) {
@@ -332,6 +429,77 @@ async function postRunQaWithRetry(body: unknown, attempts = 2) {
   throw lastError instanceof Error ? lastError : new Error("Run QA failed");
 }
 
+async function startDeepScanJob(body: unknown) {
+  const res = await apiFetch("/api/workspace/deep-scan", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : "Deep scan failed");
+  return data.job as {
+    job_id: string;
+    status: "queued" | "running" | "completed" | "failed";
+    phase: string;
+    error?: string;
+    checkpoints?: { phase: string; status: string; detail?: string; count?: number }[];
+    issues?: Issue[];
+    assets?: Asset[];
+    agent_trace?: AgentRunTrace | null;
+  };
+}
+
+async function pollDeepScanJob(
+  jobId: string,
+  onUpdate: (job: Awaited<ReturnType<typeof startDeepScanJob>>) => void
+) {
+  for (let attempt = 0; attempt < 180; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    const res = await apiFetch(`/api/workspace/deep-scan?job_id=${encodeURIComponent(jobId)}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : "Deep scan failed");
+    const job = data.job as Awaited<ReturnType<typeof startDeepScanJob>>;
+    onUpdate(job);
+    if (job.status === "completed") return job;
+    if (job.status === "failed") throw new Error(job.error || "Deep scan failed");
+  }
+  throw new Error("Deep scan timeout");
+}
+
+async function commitDeepScanJob(jobId: string) {
+  const res = await apiFetch("/api/workspace/deep-scan/commit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ job_id: jobId }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    const err = new Error(typeof data.message === "string" ? data.message : typeof data.error === "string" ? data.error : "Deep scan commit failed");
+    (err as Error & { stale?: boolean }).stale = data.stale === true || data.error === "stale_content";
+    throw err;
+  }
+  return data as {
+    workspace: Workspace;
+    issues: Issue[];
+    assets: Asset[];
+    agent_trace?: AgentRunTrace | null;
+    stale?: boolean;
+  };
+}
+
+function deepScanFriendlyMessage(job: Awaited<ReturnType<typeof startDeepScanJob>>) {
+  const active = [...(job.checkpoints ?? [])].reverse().find((item) =>
+    item.status === "running" || item.status === "completed" || item.status === "failed"
+  );
+  if (!active) return "Deep scan đang chuẩn bị...";
+  if (active.phase === "ocr") return "Đang đọc chữ trên ảnh...";
+  if (active.phase === "caption_ai") return "Đang rà kỹ caption...";
+  if (active.phase === "image_ai") return "Đang rà kỹ chữ trên ảnh...";
+  if (active.phase === "self_check") return "Đang tự kiểm tra lại kết quả...";
+  if (active.phase === "merge") return "Đang cập nhật kết quả...";
+  return active.detail || "Deep scan đang chạy...";
+}
+
 function hasAnyRunning(values: Record<string, boolean>) {
   return Object.values(values).some(Boolean);
 }
@@ -365,6 +533,7 @@ function hasPersistableDraftCheck(s: QAState) {
 
 function workspacePersistBody(s: QAState) {
   return {
+    project_id: s.activeProjectId,
     caption: { text: s.captionText },
     image_check_label: s.imageCheckLabel,
     assets: s.assets,
@@ -460,17 +629,11 @@ async function uploadImageFiles(
   await apiFetch("/api/workspace", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      caption: { text: s.captionText },
-      image_check_label: s.imageCheckLabel,
-      assets: s.assets,
-      artboards: s.artboards,
-      issues: s.issues,
-      last_agent_trace: s.agentTrace,
-    }),
+    body: JSON.stringify(workspacePersistBody(s)),
   });
 
   const form = new FormData();
+  if (s.activeProjectId) form.append("project_id", s.activeProjectId);
   for (const file of imageFiles) form.append("files", file);
   const res = await apiFetch("/api/assets/upload", { method: "POST", body: form });
   const data = await res.json();
@@ -480,7 +643,9 @@ async function uploadImageFiles(
   setState({ assets: data.workspace.assets });
   markTargetNeedsRerun(setState, "__workspace__");
   for (const asset of uploadedAssets) {
-    if (asset.ocr_status === "pending") void get().runOcr(asset.id);
+    if (asset.ocr_status === "pending" || asset.ocr_status === "failed" || asset.ocr_boxes.length === 0) {
+      void get().runOcr(asset.id);
+    }
   }
   return uploadedAssets;
 }
@@ -530,10 +695,12 @@ export const useQAStore = create<QAState>((set, get) => ({
     const projectsData = await projectsRes.json().catch(() => ({ projects: [], active_project_id: null }));
     const ws: Workspace = data.workspace;
     const normalized = normalizeArtboards(ws.artboards);
+    const activeProjectId = typeof projectsData.active_project_id === "string" ? projectsData.active_project_id : null;
     set({
       loaded: true,
+      appMode: ws.kind === "check" ? "check" : "project",
       projects: Array.isArray(projectsData.projects) ? projectsData.projects : [],
-      activeProjectId: typeof projectsData.active_project_id === "string" ? projectsData.active_project_id : null,
+      activeProjectId,
       workspaceName: ws.name,
       imageCheckLabel: normalizeImageCheckLabel(ws.image_check_label),
       captionText: ws.caption.text,
@@ -562,6 +729,7 @@ export const useQAStore = create<QAState>((set, get) => ({
     analyzeTimer = null;
     createCheckInFlight = null;
     deepQaInFlightByTarget.clear();
+    cardRunCache.clear();
 
     const artboards = [captionArtboard()];
     if (!get().activeProjectId) {
@@ -588,6 +756,7 @@ export const useQAStore = create<QAState>((set, get) => ({
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        project_id: get().activeProjectId,
         caption: { text: "" },
         image_check_label: DEFAULT_IMAGE_CHECK_LABEL,
         assets: [],
@@ -623,27 +792,15 @@ export const useQAStore = create<QAState>((set, get) => ({
     analyzeTimer = null;
     createCheckInFlight = null;
     deepQaInFlightByTarget.clear();
-    set({
-      loaded: true,
-      appMode: "check",
-      activeProjectId: null,
-      workspaceName: "Draft Check",
-      imageCheckLabel: DEFAULT_IMAGE_CHECK_LABEL,
-      captionText: "",
-      assets: [],
-      artboards: [captionArtboard()],
-      issues: [],
-      agentTrace: null,
-      selectedIssueId: null,
-      editorMode: "edit",
-      activeTab: "issues",
-      qaRunning: false,
-      qaRunningTargets: {},
-      analyzing: false,
-      deepQaRunning: false,
-      deepQaRunningTargets: {},
-      cardScanStatus: {},
+    cardRunCache.clear();
+    const res = await apiFetch("/api/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "create", kind: "check", name: checkName() }),
     });
+    if (!res.ok) throw new Error("Create check failed");
+    set({ loaded: false, appMode: "check", activeTab: "issues", qaRunning: false, qaRunningTargets: {}, deepQaRunning: false, deepQaRunningTargets: {}, cardScanStatus: {} });
+    await get().load();
   },
 
   createProject: async (name) => {
@@ -652,6 +809,7 @@ export const useQAStore = create<QAState>((set, get) => ({
     analyzeTimer = null;
     createCheckInFlight = null;
     deepQaInFlightByTarget.clear();
+    cardRunCache.clear();
     const res = await apiFetch("/api/projects", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -664,7 +822,8 @@ export const useQAStore = create<QAState>((set, get) => ({
 
   switchProject: async (projectId, mode = "project") => {
     if (!projectId || projectId === get().activeProjectId) {
-      set({ appMode: mode });
+      const currentKind = get().projects.find((project) => project.id === projectId)?.kind;
+      set({ appMode: currentKind === "check" ? "check" : mode });
       return;
     }
     await flushPersist(set, get);
@@ -672,6 +831,7 @@ export const useQAStore = create<QAState>((set, get) => ({
     analyzeTimer = null;
     createCheckInFlight = null;
     deepQaInFlightByTarget.clear();
+    cardRunCache.clear();
     const res = await apiFetch("/api/projects", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -711,6 +871,7 @@ export const useQAStore = create<QAState>((set, get) => ({
       analyzeTimer = null;
       createCheckInFlight = null;
       deepQaInFlightByTarget.clear();
+      cardRunCache.clear();
     } else {
       await flushPersist(set, get);
     }
@@ -803,12 +964,18 @@ export const useQAStore = create<QAState>((set, get) => ({
   },
 
   runOcr: async (assetId) => {
+    const projectId = get().activeProjectId;
     set((s) => ({
       assets: s.assets.map((a) => (a.id === assetId ? { ...a, ocr_status: "processing" } : a)),
     }));
     try {
-      const res = await apiFetch(`/api/assets/${assetId}/ocr`, { method: "POST" });
+      const res = await apiFetch(`/api/assets/${assetId}/ocr`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project_id: projectId }),
+      });
       const data = await res.json();
+      if (get().activeProjectId !== projectId) return;
       if (data.asset) {
         set((s) => ({ assets: s.assets.map((a) => (a.id === assetId ? data.asset : a)) }));
       }
@@ -874,25 +1041,45 @@ export const useQAStore = create<QAState>((set, get) => ({
       phase: "fast_running",
       message: "Fast check in progress...",
       detail: "Typolice will show the first results quickly, then continue scanning in the background.",
+      coverage: "still_checking",
     });
     set({ activeTab: "issues" });
     try {
       // persist current state first so the server QA sees latest caption/artboards
       const s = await ensureActiveCheckProject(set, get);
+      const runProjectId = s.activeProjectId;
       const contentSnapshot = targetFingerprint(s, targetArtboardId);
+      const cacheKey = runCacheKey(s, targetKey, contentSnapshot, mode);
+      const cached = cardRunCache.get(cacheKey);
+      if (cached) {
+        const current = get();
+        const issues = preserveCurrentDecisions(cached.issues, current.issues);
+        const finalIssueCount = openIssueCountForTarget(issues, targetKey);
+        set({
+          issues,
+          assets: cached.assets,
+          agentTrace: cached.agentTrace,
+          editorMode: "review",
+          activeTab: "issues",
+        });
+        setScanStatus(set, targetKey, {
+          phase: "complete",
+          message: "Checked",
+          detail: `Reused the latest result for this unchanged card. Cached at ${new Date(cached.cachedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}.`,
+          fastIssueCount: finalIssueCount,
+          finalIssueCount,
+          coverage: coverageForRun(targetKey, issues, cached.assets, current.artboards),
+        });
+        return;
+      }
       await apiFetch("/api/workspace", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          caption: { text: s.captionText },
-          image_check_label: s.imageCheckLabel,
-          assets: s.assets,
-          artboards: s.artboards,
-          issues: s.issues,
-        }),
+        body: JSON.stringify(workspacePersistBody(s)),
       });
-      const data = await postRunQaWithRetry({ visual_qa: visualQa, target_artboard_id: targetArtboardId });
+      const data = await postRunQaWithRetry({ project_id: runProjectId, visual_qa: visualQa, target_artboard_id: targetArtboardId });
       const fastIssueCount = openIssueCountForTarget(data.workspace.issues, targetKey);
+      if (get().activeProjectId !== runProjectId) return;
       set({
         issues: data.workspace.issues,
         assets: data.workspace.assets,
@@ -906,70 +1093,113 @@ export const useQAStore = create<QAState>((set, get) => ({
             message: "Fast check preview loaded. Deep scan in progress...",
             detail: "Additional issues may be found. Typolice will add them to this card automatically.",
             fastIssueCount,
+            coverage: "still_checking",
           }
         : {
             phase: "complete",
-            message: "Đã kiểm tra xong.",
+            message: "Checked",
             detail: fastIssueCount > 0 ? `Tìm thấy ${fastIssueCount} lỗi đang mở.` : "Chưa thấy lỗi đang mở.",
             fastIssueCount,
             finalIssueCount: fastIssueCount,
+            coverage: coverageForRun(targetKey, data.workspace.issues, data.workspace.assets, data.workspace.artboards ?? get().artboards),
           }
       );
+      if (!(smartRun && get().llmConfigured)) {
+        cardRunCache.set(cacheKey, {
+          issues: data.workspace.issues,
+          assets: data.workspace.assets,
+          agentTrace: data.agent_trace ?? null,
+          finalIssueCount: fastIssueCount,
+          cachedAt: new Date().toISOString(),
+        });
+      }
 
       if (smartRun && get().llmConfigured && !deepQaInFlightByTarget.has(targetKey)) {
         setTargetRunning(set, "deepQaRunningTargets", targetKey, true);
         const deepRun = (async () => {
           try {
             const latest = get();
-            await apiFetch("/api/workspace", {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                caption: { text: latest.captionText },
-                image_check_label: latest.imageCheckLabel,
-                assets: latest.assets,
-                artboards: latest.artboards,
-                issues: latest.issues,
-              }),
-            });
-            const deepData = await postRunQaWithRetry({
-              visual_qa: true,
-              caption_llm: true,
+            if (latest.activeProjectId === runProjectId) {
+              await apiFetch("/api/workspace", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(workspacePersistBody(latest)),
+              });
+            }
+            const job = await startDeepScanJob({
+              project_id: runProjectId,
+              content_fingerprint: contentSnapshot,
               target_artboard_id: targetArtboardId,
             });
+            await pollDeepScanJob(job.job_id, (nextJob) => {
+              const current = get();
+              if (current.activeProjectId !== runProjectId) return;
+              if (targetFingerprint(current, targetArtboardId) !== contentSnapshot) return;
+              setScanStatus(set, targetKey, {
+                phase: "deep_running",
+                message: deepScanFriendlyMessage(nextJob),
+                detail: nextJob.checkpoints?.map((item) => `${item.phase}: ${item.status}`).join(" · "),
+                fastIssueCount,
+                coverage: "still_checking",
+              });
+            });
             const current = get();
+            if (current.activeProjectId !== runProjectId) return;
             if (targetFingerprint(current, targetArtboardId) !== contentSnapshot) {
               setScanStatus(set, targetKey, {
                 phase: "needs_rerun",
                 message: "Nội dung đã thay đổi. Bấm Run để kiểm tra lại.",
                 detail: "Typolice đã giữ kết quả nhanh trước đó, nhưng bản rà kỹ thuộc nội dung cũ nên không tự áp dụng.",
                 fastIssueCount,
+                coverage: coverageForRun(targetKey, current.issues, current.assets, current.artboards),
               });
               return;
             }
-            const finalIssueCount = openIssueCountForTarget(deepData.workspace.issues, targetKey);
+            const committed = await commitDeepScanJob(job.job_id);
+            const finalIssues = committed.issues ?? current.issues;
+            const finalAssets = committed.assets ?? current.assets;
+            const finalIssueCount = openIssueCountForTarget(finalIssues, targetKey);
             set({
-              issues: deepData.workspace.issues,
-              assets: deepData.workspace.assets,
-              agentTrace: deepData.agent_trace ?? null,
+              issues: finalIssues,
+              assets: finalAssets,
+              agentTrace: committed.agent_trace ?? null,
               editorMode: "review",
+            });
+            cardRunCache.set(cacheKey, {
+              issues: finalIssues,
+              assets: finalAssets,
+              agentTrace: committed.agent_trace ?? null,
+              finalIssueCount,
+              cachedAt: new Date().toISOString(),
             });
             setScanStatus(set, targetKey, {
               phase: "complete",
-              message: "Đã rà kỹ xong.",
+              message: "Checked",
               detail: finalIssueCount > fastIssueCount
                 ? `Typolice vừa tìm thêm ${finalIssueCount - fastIssueCount} lỗi cần xem.`
                 : "Không thấy thêm lỗi mới sau khi rà kỹ.",
               fastIssueCount,
               finalIssueCount,
+              coverage: coverageForRun(targetKey, finalIssues, finalAssets, current.artboards),
             });
           } catch (err) {
             console.error("[runQA] background deep QA failed:", err);
+            if ((err as Error & { stale?: boolean }).stale) {
+              setScanStatus(set, targetKey, {
+                phase: "needs_rerun",
+                message: "Nội dung đã thay đổi. Bấm Run để kiểm tra lại.",
+                detail: "Typolice không ghi kết quả rà kỹ cũ vào workspace.",
+                fastIssueCount,
+                coverage: coverageForRun(targetKey, get().issues, get().assets, get().artboards),
+              });
+              return;
+            }
             setScanStatus(set, targetKey, {
               phase: "failed",
               message: "Chưa rà kỹ xong. Kết quả nhanh vẫn đang hiển thị.",
               detail: "Typolice đã tự thử lại một lần. Bạn có thể bấm Run lại sau nếu muốn rà kỹ thêm.",
               fastIssueCount,
+              coverage: coverageForRun(targetKey, get().issues, get().assets, get().artboards),
             });
           } finally {
             deepQaInFlightByTarget.delete(targetKey);
@@ -983,6 +1213,7 @@ export const useQAStore = create<QAState>((set, get) => ({
         phase: "failed",
         message: "Chưa kiểm tra được. Hãy thử Run lại.",
         detail: "Typolice chưa nhận được kết quả cho lần chạy này.",
+        coverage: coverageForRun(targetKey, get().issues, get().assets, get().artboards),
       });
       throw err;
     } finally {
@@ -1020,6 +1251,13 @@ export const useQAStore = create<QAState>((set, get) => ({
     schedulePersist(set, get);
   },
 
+  checkIssue: (issueId) => {
+    set((s) => ({
+      issues: s.issues.map((i) => (i.issue_id === issueId ? { ...i, status: "resolved" as const } : i)),
+    }));
+    schedulePersist(set, get);
+  },
+
   ignoreIssue: (issueId) => {
     set((s) => ({
       issues: s.issues.map((i) => (i.issue_id === issueId ? { ...i, status: "ignored" } : i)),
@@ -1033,7 +1271,7 @@ export const useQAStore = create<QAState>((set, get) => ({
     const res = await apiFetch("/api/brand-kit", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ add_term: issue.original, list: "do_not_change" }),
+      body: JSON.stringify({ add_term: issue.original, list: "do_not_change", project_id: get().activeProjectId }),
     });
     const data = await res.json();
     set((s) => ({
@@ -1052,7 +1290,7 @@ export const useQAStore = create<QAState>((set, get) => ({
     const res = await apiFetch("/api/brand-kit", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input),
+      body: JSON.stringify({ ...input, project_id: get().activeProjectId }),
     });
     if (!res.ok) return false;
     const data = await res.json();
@@ -1062,6 +1300,7 @@ export const useQAStore = create<QAState>((set, get) => ({
 
   uploadGuidelineFile: async (file) => {
     const form = new FormData();
+    if (get().activeProjectId) form.append("project_id", get().activeProjectId as string);
     form.append("file", file);
     const res = await apiFetch("/api/brand-kit", {
       method: "POST",
@@ -1228,6 +1467,8 @@ export const useQAStore = create<QAState>((set, get) => ({
         return { ...next, layers: fitLayersToLayout(next) };
       }),
     }));
+    markTargetNeedsRerun(set, artboardId);
+    markTargetNeedsRerun(set, "__workspace__");
     schedulePersist(set, get);
   },
 
@@ -1266,6 +1507,16 @@ export const useQAStore = create<QAState>((set, get) => ({
         };
       }),
     }));
+    const dropped = get().assets.find((asset) => asset.id === assetId);
+    if (dropped && (
+      dropped.ocr_status === "pending" ||
+      dropped.ocr_status === "failed" ||
+      dropped.ocr_boxes.length === 0
+    )) {
+      void get().runOcr(assetId);
+    }
+    markTargetNeedsRerun(set, artboardId);
+    markTargetNeedsRerun(set, "__workspace__");
     schedulePersist(set, get);
   },
 

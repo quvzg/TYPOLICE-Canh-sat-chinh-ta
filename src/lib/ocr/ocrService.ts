@@ -12,7 +12,7 @@ const corePath = () =>
   path.join(/* turbopackIgnore: true */ process.cwd(), "node_modules", "tesseract.js-core");
 const langPath = () =>
   path.join(/* turbopackIgnore: true */ process.cwd(), "tessdata");
-const OCR_CACHE_VERSION = "v4";
+const OCR_CACHE_VERSION = "v5";
 const OCR_TARGET_LONG_EDGE = 1800;
 const OCR_MAX_LONG_EDGE = 2600;
 const OCR_FALLBACK_MIN_CONFIDENCE = 0.45;
@@ -53,8 +53,19 @@ interface TessData {
   lines?: TessLine[];
 }
 
+interface OcrCachePayload {
+  version: string;
+  engine: "tesseract.js";
+  created_at: string;
+  attempt_count: number;
+  box_count: number;
+  avg_confidence: number;
+  no_text_confirmed: boolean;
+  boxes: OcrBox[];
+}
+
 export function hasCurrentOcrBoxes(boxes: OcrBox[]): boolean {
-  return boxes.length === 0 || boxes.every((box) => box.box_id.startsWith(`ocr_${OCR_CACHE_VERSION}_`));
+  return boxes.length > 0 && boxes.every((box) => box.box_id.startsWith(`ocr_${OCR_CACHE_VERSION}_`));
 }
 
 function cacheFileFor(fileHash: string): string {
@@ -156,6 +167,25 @@ async function prepareImage(filePath: string): Promise<{
   return { buffer, scale, originalWidth, originalHeight };
 }
 
+async function prepareImageVariants(filePath: string): Promise<Array<Awaited<ReturnType<typeof prepareImage>> & { label: string }>> {
+  const base = await prepareImage(filePath);
+  const highContrast = await sharp(base.buffer)
+    .linear(1.18, -8)
+    .sharpen({ sigma: 1.15 })
+    .png()
+    .toBuffer();
+  const binary = await sharp(base.buffer)
+    .threshold(168)
+    .median(1)
+    .png()
+    .toBuffer();
+  return [
+    { ...base, label: "standard" },
+    { ...base, buffer: highContrast, label: "contrast" },
+    { ...base, buffer: binary, label: "binary" },
+  ];
+}
+
 function lineToBox(
   line: TessLine,
   index: number,
@@ -218,23 +248,105 @@ function buildBoxes(lines: TessLine[], assetId: string, fileHash: string, prepar
     .filter((box): box is OcrBox => Boolean(box));
 }
 
+function avgConfidence(boxes: OcrBox[]): number {
+  return boxes.length ? boxes.reduce((sum, box) => sum + box.confidence, 0) / boxes.length : 0;
+}
+
+function parseCache(raw: unknown): OcrCachePayload | null {
+  if (Array.isArray(raw)) {
+    const boxes = raw.filter((box): box is OcrBox => Boolean(box?.box_id));
+    if (boxes.length === 0 || !hasCurrentOcrBoxes(boxes)) return null;
+    return {
+      version: OCR_CACHE_VERSION,
+      engine: "tesseract.js",
+      created_at: new Date().toISOString(),
+      attempt_count: 1,
+      box_count: boxes.length,
+      avg_confidence: avgConfidence(boxes),
+      no_text_confirmed: false,
+      boxes,
+    };
+  }
+  if (!raw || typeof raw !== "object") return null;
+  const payload = raw as Partial<OcrCachePayload>;
+  if (payload.version !== OCR_CACHE_VERSION || !Array.isArray(payload.boxes)) return null;
+  if (payload.boxes.length > 0 && hasCurrentOcrBoxes(payload.boxes)) return payload as OcrCachePayload;
+  if (payload.boxes.length === 0 && payload.no_text_confirmed && (payload.attempt_count ?? 0) >= 2) {
+    return { ...(payload as OcrCachePayload), boxes: [] };
+  }
+  return null;
+}
+
+function readCache(cacheFile: string): OcrCachePayload | null {
+  try {
+    return parseCache(JSON.parse(fs.readFileSync(cacheFile, "utf-8")));
+  } catch {
+    return null;
+  }
+}
+
+function readCacheLoose(cacheFile: string): OcrCachePayload | null {
+  try {
+    const raw = JSON.parse(fs.readFileSync(cacheFile, "utf-8")) as Partial<OcrCachePayload>;
+    if (!raw || typeof raw !== "object" || raw.version !== OCR_CACHE_VERSION || !Array.isArray(raw.boxes)) return null;
+    return {
+      version: OCR_CACHE_VERSION,
+      engine: "tesseract.js",
+      created_at: typeof raw.created_at === "string" ? raw.created_at : new Date().toISOString(),
+      attempt_count: typeof raw.attempt_count === "number" ? raw.attempt_count : 0,
+      box_count: typeof raw.box_count === "number" ? raw.box_count : raw.boxes.length,
+      avg_confidence: typeof raw.avg_confidence === "number" ? raw.avg_confidence : avgConfidence(raw.boxes),
+      no_text_confirmed: raw.no_text_confirmed === true,
+      boxes: raw.boxes,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeCache(cacheFile: string, boxes: OcrBox[], previous: OcrCachePayload | null): void {
+  const attemptCount = (previous?.attempt_count ?? 0) + 1;
+  const payload: OcrCachePayload = {
+    version: OCR_CACHE_VERSION,
+    engine: "tesseract.js",
+    created_at: new Date().toISOString(),
+    attempt_count: attemptCount,
+    box_count: boxes.length,
+    avg_confidence: avgConfidence(boxes),
+    no_text_confirmed: boxes.length === 0 && attemptCount >= 2,
+    boxes,
+  };
+  fs.writeFileSync(cacheFile, JSON.stringify(payload, null, 2));
+}
+
 /**
  * OCR an image file → line-level boxes (text, confidence 0..1, bbox).
  * Result is cached by content hash: dragging/resizing an image never re-OCRs.
  */
 async function runOcrUncached(filePath: string, assetId: string, fileHash: string, cacheFile: string): Promise<OcrBox[]> {
-  const prepared = await prepareImage(filePath);
+  const previousCache = readCacheLoose(cacheFile);
+  const variants = await prepareImageVariants(filePath);
   const worker = await getWorker();
-  const primaryBoxes = buildBoxes(await recognizeLines(worker, prepared.buffer, PSM.SPARSE_TEXT), assetId, fileHash, prepared);
+  const [standard, contrast, binary] = variants;
+  const primaryBoxes = buildBoxes(await recognizeLines(worker, standard.buffer, PSM.SPARSE_TEXT), assetId, fileHash, standard);
   const primaryAvg = primaryBoxes.length
     ? primaryBoxes.reduce((sum, box) => sum + box.confidence, 0) / primaryBoxes.length
     : 0;
   const fallbackBoxes = primaryBoxes.length === 0 || primaryAvg < OCR_FALLBACK_MIN_CONFIDENCE
-    ? buildBoxes(await recognizeLines(worker, prepared.buffer, PSM.AUTO), assetId, fileHash, prepared)
+    ? buildBoxes(await recognizeLines(worker, standard.buffer, PSM.AUTO), assetId, fileHash, standard)
     : [];
-  const boxes = dedupeBoxes([...primaryBoxes, ...fallbackBoxes], assetId, fileHash);
+  const firstPassBoxes = dedupeBoxes([...primaryBoxes, ...fallbackBoxes], assetId, fileHash);
+  const firstPassAvg = avgConfidence(firstPassBoxes);
+  const shouldRunHardPasses = firstPassBoxes.length === 0 || firstPassBoxes.length < 8 || firstPassAvg < 0.72;
+  const contrastBoxes = shouldRunHardPasses
+    ? buildBoxes(await recognizeLines(worker, contrast.buffer, PSM.SPARSE_TEXT), assetId, fileHash, contrast)
+    : [];
+  const binaryBoxes = shouldRunHardPasses
+    ? buildBoxes(await recognizeLines(worker, binary.buffer, PSM.AUTO), assetId, fileHash, binary)
+    : [];
+  const boxes = dedupeBoxes([...firstPassBoxes, ...contrastBoxes, ...binaryBoxes], assetId, fileHash);
 
-  fs.writeFileSync(cacheFile, JSON.stringify(boxes, null, 2));
+  writeCache(cacheFile, boxes, previousCache);
   return boxes;
 }
 
@@ -242,8 +354,8 @@ export async function runOcr(filePath: string, assetId: string, fileHash: string
   fs.mkdirSync(cacheDir(), { recursive: true });
   const cacheFile = cacheFileFor(fileHash);
   if (fs.existsSync(cacheFile)) {
-    const cached = JSON.parse(fs.readFileSync(cacheFile, "utf-8")) as OcrBox[];
-    return cached.map((b) => ({ ...b, asset_id: assetId }));
+    const cached = readCache(cacheFile);
+    if (cached) return cached.boxes.map((b) => ({ ...b, asset_id: assetId }));
   }
 
   const running = ocrInFlight.get(fileHash);

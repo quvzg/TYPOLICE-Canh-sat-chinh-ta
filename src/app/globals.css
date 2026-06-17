@@ -72,6 +72,24 @@ body {
   color: #f4f4f5;
 }
 
+.cp-caption-type-box,
+.cp-caption-copy {
+  scrollbar-width: auto;
+  scrollbar-color: #52525b transparent;
+}
+
+.cp-caption-type-box::-webkit-scrollbar,
+.cp-caption-copy::-webkit-scrollbar {
+  width: 14px;
+  height: 14px;
+}
+
+.cp-caption-type-box::-webkit-scrollbar-thumb,
+.cp-caption-copy::-webkit-scrollbar-thumb {
+  border-width: 3px;
+  background: #52525b;
+}
+
 .cp-caption-copy {
   font-family: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system,
     "Segoe UI", Arial, sans-serif;
@@ -89,6 +107,41 @@ body {
   font-size: 31px;
   font-weight: 500;
   line-height: 1.35;
+}
+
+.cp-space-artboard-title-input {
+  min-width: 0;
+  max-width: min(760px, 62%);
+  flex: 0 1 auto;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  padding: 0.12em 0.28em;
+  color: #a1a1aa;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.15;
+  text-transform: uppercase;
+  outline: none;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.cp-space-artboard-title-input:hover {
+  border-color: rgba(63, 63, 70, 0.72);
+  background: rgba(24, 24, 27, 0.48);
+  color: #d4d4d8;
+}
+
+.cp-space-artboard-title-input:focus {
+  border-color: rgba(240, 90, 34, 0.58);
+  background: rgba(24, 24, 27, 0.86);
+  color: #fafafa;
+  box-shadow: 0 0 0 8px rgba(240, 90, 34, 0.1);
 }
 
 .cp-basic-caption-input {
@@ -641,6 +694,32 @@ html[data-theme="light"] .cp-caption-type-box:focus {
 
 html[data-theme="light"] .cp-caption-type-box::placeholder {
   color: #a99f93;
+}
+
+html[data-theme="light"] .cp-caption-type-box,
+html[data-theme="light"] .cp-caption-copy {
+  scrollbar-color: #a99f93 transparent;
+}
+
+html[data-theme="light"] .cp-caption-type-box::-webkit-scrollbar-thumb,
+html[data-theme="light"] .cp-caption-copy::-webkit-scrollbar-thumb {
+  background: #a99f93;
+}
+
+html[data-theme="light"] .cp-space-artboard-title-input {
+  color: #57534e;
+}
+
+html[data-theme="light"] .cp-space-artboard-title-input:hover {
+  border-color: rgba(216, 206, 194, 0.88);
+  background: rgba(244, 239, 232, 0.72);
+  color: #27272a;
+}
+
+html[data-theme="light"] .cp-space-artboard-title-input:focus {
+  border-color: rgba(240, 90, 34, 0.5);
+  background: rgba(255, 250, 245, 0.92);
+  color: #27272a;
 }
 
 html[data-theme="light"] .cp-basic-caption-input {

@@ -42,6 +42,7 @@ next-env.d.ts
 
 # app storage (uploads, OCR cache, workspace db)
 storage/
+tessdata/
 uploads/
 exports/
 

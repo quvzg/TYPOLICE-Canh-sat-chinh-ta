@@ -61,6 +61,8 @@ function detectImageSize(buffer: Buffer): { width: number; height: number } {
 export async function POST(req: NextRequest) {
   const scope = deviceScopeFromRequest(req);
   const form = await req.formData();
+  const projectIdValue = form.get("project_id");
+  const projectId = typeof projectIdValue === "string" && projectIdValue.trim() ? projectIdValue.trim() : undefined;
   const files = form.getAll("files").filter((f): f is File => f instanceof File);
   if (files.length === 0) {
     return NextResponse.json({ error: "no files" }, { status: 400 });
@@ -87,7 +89,7 @@ export async function POST(req: NextRequest) {
     }, { status: 413 });
   }
 
-  const ws = getWorkspace(undefined, scope);
+  const ws = getWorkspace(projectId, scope);
   const added: Asset[] = [];
 
   for (const file of files) {
@@ -97,6 +99,9 @@ export async function POST(req: NextRequest) {
     // dedupe by content hash
     const existing = ws.assets.find((a) => a.hash === hash);
     if (existing) {
+      if (!existing.url.includes("project_id=")) {
+        existing.url = `${existing.url}${existing.url.includes("?") ? "&" : "?"}project_id=${encodeURIComponent(ws.id)}`;
+      }
       added.push(existing);
       continue;
     }
@@ -105,7 +110,7 @@ export async function POST(req: NextRequest) {
 
     const ext = path.extname(file.name) || ".png";
     const storedName = `${hash.slice(0, 16)}${ext}`;
-    fs.writeFileSync(/* turbopackIgnore: true */ path.join(uploadsDir(undefined, scope), storedName), buffer);
+    fs.writeFileSync(/* turbopackIgnore: true */ path.join(uploadsDir(projectId, scope), storedName), buffer);
 
     const asset: Asset = {
       id: `asset_${hash.slice(0, 12)}`,
@@ -114,7 +119,7 @@ export async function POST(req: NextRequest) {
       width,
       height,
       hash,
-      url: `/api/files/${storedName}`,
+      url: `/api/files/${storedName}?project_id=${encodeURIComponent(ws.id)}`,
       ocr_status: "pending",
       ocr_boxes: [],
     };
@@ -122,6 +127,6 @@ export async function POST(req: NextRequest) {
     added.push(asset);
   }
 
-  saveWorkspace(ws, undefined, scope);
+  saveWorkspace(ws, projectId, scope);
   return NextResponse.json({ assets: added, workspace: ws });
 }

@@ -5,26 +5,31 @@ import { deviceScopeFromRequest, getWorkspace, saveWorkspace, uploadsDir } from 
 import { runOcr } from "@/lib/ocr/ocrService";
 import { correctOcrWithVision } from "@/lib/ocr/ocrVisionCorrection";
 
+function storedAssetName(url: string): string {
+  return path.basename(new URL(url, "http://typolice.local").pathname);
+}
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const scope = deviceScopeFromRequest(req);
   const { id } = await params;
-  const { vision_correction = false } = await req.json().catch(() => ({}));
-  const ws = getWorkspace(undefined, scope);
+  const { vision_correction = false, project_id = undefined } = await req.json().catch(() => ({}));
+  const projectId = typeof project_id === "string" && project_id.trim() ? project_id.trim() : undefined;
+  const ws = getWorkspace(projectId, scope);
   const asset = ws.assets.find((a) => a.id === id);
   if (!asset) return NextResponse.json({ error: "asset not found" }, { status: 404 });
 
   asset.ocr_status = "processing";
-  saveWorkspace(ws, undefined, scope);
+  saveWorkspace(ws, projectId, scope);
 
   try {
-    const storedName = path.basename(asset.url);
-    const filePath = path.join(uploadsDir(undefined, scope), storedName);
+    const storedName = storedAssetName(asset.url);
+    const filePath = path.join(uploadsDir(projectId, scope), storedName);
     const rawBoxes = await runOcr(filePath, asset.id, asset.hash);
     const boxes = vision_correction
-      ? await correctOcrWithVision(filePath, rawBoxes, loadBrandKit(undefined, scope))
+      ? await correctOcrWithVision(filePath, rawBoxes, loadBrandKit(projectId, scope))
       : rawBoxes;
     asset.ocr_boxes = boxes;
     const avgConf = boxes.length
@@ -36,6 +41,6 @@ export async function POST(
     asset.ocr_status = "failed";
   }
 
-  saveWorkspace(ws, undefined, scope);
+  saveWorkspace(ws, projectId, scope);
   return NextResponse.json({ asset });
 }

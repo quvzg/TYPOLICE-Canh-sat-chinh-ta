@@ -98,7 +98,6 @@ function issueCategory(issue: Issue): string {
   if (issue.type === "punctuation") return "Punctuation";
   if (issue.type === "hashtag") return "Hashtag";
   if (issue.type === "brand_term" || issue.type === "terminology") return "Brand Style";
-  if (issue.type === "link_safety") return "Link Safety";
   if (issue.type === "ocr_low_confidence") return "Đọc chữ trên ảnh";
   if (issue.type === "layout_risk" || issue.type === "platform_format") return "Layout";
   if (issue.reason.toLowerCase().includes("dấu tiếng việt") || issue.reason.toLowerCase().includes("thiếu dấu")) return "Vietnamese Tone";
@@ -113,7 +112,6 @@ function violationLabel(issue: Issue): string {
   if (issue.type === "punctuation") return "Sai dấu câu";
   if (issue.type === "spelling") return "Sai chính tả tiếng Việt";
   if (issue.type === "hashtag") return "Sai format hashtag";
-  if (issue.type === "link_safety") return "Link cần kiểm tra";
   if (issue.type === "grammar") return "Sai ngữ pháp / từ lặp";
   if (issue.type === "ocr_low_confidence") return "Chữ trên ảnh cần kiểm tra";
   return issueCategory(issue);
@@ -324,6 +322,16 @@ function findFontPath(bold = false, italic = false) {
       : bold
         ? "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
         : "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    italic
+      ? "/usr/share/fonts/ttf-dejavu/DejaVuSans-Oblique.ttf"
+      : bold
+        ? "/usr/share/fonts/ttf-dejavu/DejaVuSans-Bold.ttf"
+        : "/usr/share/fonts/ttf-dejavu/DejaVuSans.ttf",
+    italic
+      ? "/usr/share/fonts/dejavu/DejaVuSans-Oblique.ttf"
+      : bold
+        ? "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf"
+        : "/usr/share/fonts/dejavu/DejaVuSans.ttf",
     italic
       ? "/usr/share/fonts/truetype/liberation2/LiberationSans-Italic.ttf"
       : bold

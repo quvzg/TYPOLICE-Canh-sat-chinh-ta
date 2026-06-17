@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
-import { deviceScopeFromRequest, uploadsDir } from "@/lib/server/db";
+import { deviceScopeFromRequest, listProjects, uploadsDir } from "@/lib/server/db";
 
 const MIME: Record<string, string> = {
   ".png": "image/png",
@@ -17,8 +17,12 @@ export async function GET(
 ) {
   const scope = deviceScopeFromRequest(req);
   const { name } = await params;
+  const projectId = req.nextUrl.searchParams.get("project_id")?.trim() || undefined;
+  if (!projectId && listProjects(scope).length > 1) {
+    return NextResponse.json({ error: "project_id required" }, { status: 400 });
+  }
   const safe = path.basename(name); // prevent path traversal
-  const filePath = path.join(uploadsDir(undefined, scope), safe);
+  const filePath = path.join(uploadsDir(projectId, scope), safe);
   if (!fs.existsSync(filePath)) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }

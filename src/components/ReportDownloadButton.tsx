@@ -2,6 +2,7 @@
 
 import { type ReactNode, useState } from "react";
 import { apiFetch } from "@/lib/device";
+import { useQAStore } from "@/lib/store";
 
 interface ReportDownloadButtonProps {
   format: "pdf" | "xlsx";
@@ -12,12 +13,15 @@ interface ReportDownloadButtonProps {
 
 export default function ReportDownloadButton({ format, filename, className, children }: ReportDownloadButtonProps) {
   const [downloading, setDownloading] = useState(false);
+  const activeProjectId = useQAStore((s) => s.activeProjectId);
 
   const download = async () => {
     if (downloading) return;
     setDownloading(true);
     try {
-      const res = await apiFetch(`/api/report?format=${format}`);
+      const params = new URLSearchParams({ format });
+      if (activeProjectId) params.set("project_id", activeProjectId);
+      const res = await apiFetch(`/api/report?${params.toString()}`);
       if (!res.ok) throw new Error("download failed");
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);

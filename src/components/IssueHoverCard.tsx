@@ -3,7 +3,7 @@
 import { type CSSProperties } from "react";
 import { useQAStore } from "@/lib/store";
 import { SEVERITY_COLORS } from "@/lib/presets";
-import { friendlyIssueReason, friendlyIssueType } from "@/lib/qa/issueDisplay";
+import { friendlyIssueReason, friendlyIssueType, requiresManualIssueCheck } from "@/lib/qa/issueDisplay";
 import type { Issue } from "@/types";
 
 function severityBadgeStyle(color: string): CSSProperties {
@@ -17,10 +17,12 @@ function severityBadgeStyle(color: string): CSSProperties {
 
 export default function IssueHoverCard({ issue }: { issue: Issue }) {
   const acceptIssue = useQAStore((s) => s.acceptIssue);
+  const checkIssue = useQAStore((s) => s.checkIssue);
   const ignoreIssue = useQAStore((s) => s.ignoreIssue);
   const addToDictionary = useQAStore((s) => s.addToDictionary);
   const color = SEVERITY_COLORS[issue.severity];
   const warningOnly = issue.original === issue.suggestion;
+  const manualCheck = requiresManualIssueCheck(issue);
   const issueType = friendlyIssueType(issue);
   const reason = friendlyIssueReason(issue.reason);
 
@@ -56,23 +58,31 @@ export default function IssueHoverCard({ issue }: { issue: Issue }) {
       <p className="mb-2 text-[11px] text-zinc-400">{reason}</p>
 
       <div className="flex flex-wrap gap-1.5">
-        {!warningOnly && issue.source_type === "caption" && (
-          <button onClick={() => acceptIssue(issue.issue_id)} className="cp-success-button cp-button-xs">
-            Accept
+        {manualCheck ? (
+          <button onClick={() => checkIssue(issue.issue_id)} className="cp-success-button cp-button-xs" title="Đánh dấu đã tự kiểm tra — không áp dụng gợi ý tự động">
+            Checked
           </button>
-        )}
-        {issue.source_type === "image" && (
-          <button onClick={() => acceptIssue(issue.issue_id)} className="cp-success-button cp-button-xs">
-            Accept note
-          </button>
-        )}
-        <button onClick={() => ignoreIssue(issue.issue_id)} className="cp-muted-button cp-button-xs">
-          Ignore
-        </button>
-        {(issue.type === "brand_term" || issue.type === "spelling") && (
-          <button onClick={() => void addToDictionary(issue.issue_id)} className="cp-info-button cp-button-xs">
-            + Dict
-          </button>
+        ) : (
+          <>
+            {!warningOnly && issue.source_type === "caption" && (
+              <button onClick={() => acceptIssue(issue.issue_id)} className="cp-success-button cp-button-xs">
+                Accept
+              </button>
+            )}
+            {issue.source_type === "image" && (
+              <button onClick={() => acceptIssue(issue.issue_id)} className="cp-success-button cp-button-xs">
+                Accept note
+              </button>
+            )}
+            <button onClick={() => ignoreIssue(issue.issue_id)} className="cp-muted-button cp-button-xs">
+              Ignore
+            </button>
+            {(issue.type === "brand_term" || issue.type === "spelling") && (
+              <button onClick={() => void addToDictionary(issue.issue_id)} className="cp-info-button cp-button-xs">
+                + Dict
+              </button>
+            )}
+          </>
         )}
       </div>
     </div>

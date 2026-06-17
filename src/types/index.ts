@@ -10,7 +10,6 @@ export type IssueType =
   | "grammar"
   | "style"
   | "ambiguity"
-  | "link_safety"
   | "ocr_low_confidence"
   | "layout_risk"
   | "platform_format";

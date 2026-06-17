@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useQAStore } from "@/lib/store";
 import { SEVERITY_COLORS } from "@/lib/presets";
+import { requiresManualIssueCheck } from "@/lib/qa/issueDisplay";
 import type { Issue } from "@/types";
 
 interface Segment {
@@ -29,10 +30,12 @@ function buildSegments(text: string, issues: Issue[]): Segment[] {
 
 function IssuePopover({ issue }: { issue: Issue }) {
   const acceptIssue = useQAStore((s) => s.acceptIssue);
+  const checkIssue = useQAStore((s) => s.checkIssue);
   const ignoreIssue = useQAStore((s) => s.ignoreIssue);
   const addToDictionary = useQAStore((s) => s.addToDictionary);
   const color = SEVERITY_COLORS[issue.severity];
   const isWarningOnly = issue.original === issue.suggestion;
+  const manualCheck = requiresManualIssueCheck(issue);
 
   return (
     <div className="absolute left-0 top-full z-50 mt-1 w-80 rounded-lg border border-zinc-700 bg-zinc-900 p-3 text-sm shadow-2xl">
@@ -52,28 +55,40 @@ function IssuePopover({ issue }: { issue: Issue }) {
       )}
       <p className="mb-2.5 text-xs leading-relaxed text-zinc-300">{issue.reason}</p>
       <div className="flex gap-1.5">
-        {!isWarningOnly && (
+        {manualCheck ? (
           <button
-            onClick={() => acceptIssue(issue.issue_id)}
+            onClick={() => checkIssue(issue.issue_id)}
             className="cp-success-button cp-button-xs"
+            title="Đánh dấu đã tự kiểm tra — không áp dụng gợi ý tự động"
           >
-            Accept
+            Checked
           </button>
-        )}
-        <button
-          onClick={() => ignoreIssue(issue.issue_id)}
-          className="cp-muted-button cp-button-xs"
-        >
-          Ignore
-        </button>
-        {(issue.type === "brand_term" || issue.type === "spelling") && (
-          <button
-            onClick={() => addToDictionary(issue.issue_id)}
-            className="cp-info-button cp-button-xs"
-            title="Add this to Brand Kit so Typolice will not flag it again"
-          >
-            + Dictionary
-          </button>
+        ) : (
+          <>
+            {!isWarningOnly && (
+              <button
+                onClick={() => acceptIssue(issue.issue_id)}
+                className="cp-success-button cp-button-xs"
+              >
+                Accept
+              </button>
+            )}
+            <button
+              onClick={() => ignoreIssue(issue.issue_id)}
+              className="cp-muted-button cp-button-xs"
+            >
+              Ignore
+            </button>
+            {(issue.type === "brand_term" || issue.type === "spelling") && (
+              <button
+                onClick={() => addToDictionary(issue.issue_id)}
+                className="cp-info-button cp-button-xs"
+                title="Add this to Brand Kit so Typolice will not flag it again"
+              >
+                + Dictionary
+              </button>
+            )}
+          </>
         )}
       </div>
     </div>

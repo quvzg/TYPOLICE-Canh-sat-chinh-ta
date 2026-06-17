@@ -234,7 +234,7 @@ function rangeContains(container: TextRange, inner: TextRange) {
 }
 
 function isUrlFormatCleanup(hit: RuleHit) {
-  return hit.reason.includes("Markdown") || /^Link\b/u.test(hit.reason) || hit.type === "link_safety";
+  return hit.reason.includes("Markdown") || /^Link\b/u.test(hit.reason);
 }
 
 function insertionAtTextEndHit(

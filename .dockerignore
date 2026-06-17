@@ -1,6 +1,7 @@
 .next
 node_modules
 storage
+tessdata
 uploads
 exports
 tmp

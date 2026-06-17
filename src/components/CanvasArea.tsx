@@ -282,6 +282,24 @@ function canStartArtboardDrag(target: EventTarget | null) {
   );
 }
 
+function shouldLetNestedElementHandleWheel(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false;
+  return Boolean(target.closest(
+    [
+      "input",
+      "textarea",
+      "select",
+      "[contenteditable='true']",
+      "[data-canvas-wheel-local]",
+      "[data-artboard-no-drag]",
+      "[data-canvas-issue-card]",
+      "[data-space-issue-card]",
+      "[data-space-artboard-issues]",
+      "[data-space-layout-picker]",
+    ].join(",")
+  ));
+}
+
 function CanvasIssueCard({ issue }: { issue: Issue }) {
   return <IssueHoverCard issue={issue} />;
 }
@@ -301,6 +319,43 @@ function buildCaptionSegments(text: string, issues: Issue[]): CaptionSegment[] {
   }
   if (pos < text.length) segments.push({ text: text.slice(pos), issue: null });
   return segments;
+}
+
+function EditableArtboardTitle({ ab, locked, className = "" }: { ab: Artboard; locked: boolean; className?: string }) {
+  const updateArtboardLabel = useQAStore((s) => s.updateArtboardLabel);
+  const [draftLabel, setDraftLabel] = useState(ab.label);
+
+  useEffect(() => {
+    setDraftLabel(ab.label);
+  }, [ab.label]);
+
+  const commit = () => {
+    const clean = draftLabel.trim();
+    const next = clean || ab.label;
+    setDraftLabel(next);
+    if (next !== ab.label) updateArtboardLabel(ab.id, next);
+  };
+
+  return (
+    <input
+      data-artboard-no-drag="1"
+      value={draftLabel}
+      readOnly={locked}
+      onChange={(event) => setDraftLabel(event.currentTarget.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") event.currentTarget.blur();
+        if (event.key === "Escape") {
+          event.preventDefault();
+          setDraftLabel(ab.label);
+          event.currentTarget.blur();
+        }
+      }}
+      className={`cp-space-artboard-title-input ${className}`}
+      aria-label={`Rename ${ab.label}`}
+      title={locked ? "Artboard is locked" : "Rename artboard"}
+    />
+  );
 }
 
 function CaptionArtboardBody({
@@ -340,7 +395,7 @@ function CaptionArtboardBody({
   return (
     <div className="flex h-full w-full flex-col bg-zinc-950 text-zinc-100">
       <div className="flex h-20 shrink-0 items-center gap-4 border-b border-zinc-800 px-9">
-        <span className="text-[24px] font-semibold uppercase tracking-wide text-zinc-400">{ab.label}</span>
+        <EditableArtboardTitle ab={ab} locked={locked} />
         {openIssues.length > 0 && (
           <span className="rounded-full bg-red-500/20 px-4 py-1 text-[22px] font-medium text-red-300">
             {openIssues.length} issues
@@ -366,7 +421,7 @@ function CaptionArtboardBody({
           </button>
         </div>
       </div>
-      <div data-artboard-no-drag="1" className="cp-caption-type-area min-h-0 flex-1 cursor-default p-10">
+      <div data-artboard-no-drag="1" data-canvas-wheel-local="1" className="cp-caption-type-area min-h-0 flex-1 cursor-default p-10">
         {effectiveEditorMode === "edit" ? (
           <textarea
             value={text}
@@ -379,7 +434,7 @@ function CaptionArtboardBody({
             spellCheck={false}
           />
         ) : (
-          <div className="cp-caption-copy h-full overflow-y-auto whitespace-pre-wrap text-zinc-100">
+          <div data-canvas-wheel-local="1" className="cp-caption-copy h-full overflow-y-auto whitespace-pre-wrap text-zinc-100">
             {segments.length === 0 && <span className="text-zinc-700">No caption yet.</span>}
             {segments.map((seg, index) =>
               seg.issue ? (
@@ -1024,7 +1079,7 @@ function ArtboardView({
             }}
           />
           <div className="cp-visual-artboard-header flex h-20 shrink-0 items-center gap-4 border-b border-zinc-800 px-9">
-            <span className="text-[24px] font-semibold uppercase tracking-wide text-zinc-400">{ab.label}</span>
+            <EditableArtboardTitle ab={ab} locked={locked} />
             {artboardIssues.length > 0 && (
               <span className="rounded-full bg-red-500/20 px-4 py-1 text-[22px] font-medium text-red-300">
                 {artboardIssues.length} issues
@@ -1313,6 +1368,9 @@ export default function CanvasArea() {
   }, []);
 
   const onWheel = useCallback((e: React.WheelEvent) => {
+    if (shouldLetNestedElementHandleWheel(e.target)) {
+      return;
+    }
     e.preventDefault();
     const rect = containerRef.current!.getBoundingClientRect();
     const mx = e.clientX - rect.left;

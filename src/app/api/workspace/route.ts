@@ -7,12 +7,21 @@ import { getModelConfig, isModelConfigured } from "@/lib/models/gateway";
 
 export async function GET(req: NextRequest) {
   const scope = deviceScopeFromRequest(req);
-  const workspace = getWorkspace(undefined, scope);
-  const guidelineDir = projectGuidelinesDir(undefined, scope);
+  const projectId = req.nextUrl.searchParams.get("project_id")?.trim() || undefined;
+  const workspace = getWorkspace(projectId, scope);
+  workspace.assets = workspace.assets.map((asset) => asset.url.includes("project_id=")
+    ? asset
+    : { ...asset, url: `${asset.url}${asset.url.includes("?") ? "&" : "?"}project_id=${encodeURIComponent(workspace.id)}` }
+  );
+  const guidelineDir = projectGuidelinesDir(workspace.id, scope);
+  const guidelineFiles = listGuidelineUploads(guidelineDir).map((file) => ({
+    ...file,
+    url: `${file.url}${file.url.includes("?") ? "&" : "?"}project_id=${encodeURIComponent(workspace.id)}`,
+  }));
   return NextResponse.json({
     workspace,
-    brand_kit: loadBrandKit(undefined, scope),
-    guideline_files: listGuidelineUploads(guidelineDir),
+    brand_kit: loadBrandKit(workspace.id, scope),
+    guideline_files: guidelineFiles,
     llm_configured: isModelConfigured(),
     model_config: getModelConfig(),
     agent_trace: workspace.last_agent_trace ?? null,
@@ -22,7 +31,8 @@ export async function GET(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   const scope = deviceScopeFromRequest(req);
   const body = await req.json();
-  const ws = getWorkspace(undefined, scope);
+  const projectId = typeof body.project_id === "string" && body.project_id.trim() ? body.project_id.trim() : undefined;
+  const ws = getWorkspace(projectId, scope);
   if (typeof body.name === "string") ws.name = body.name;
   if (typeof body.image_check_label === "string") ws.image_check_label = body.image_check_label;
   if (body.caption) ws.caption = { ...ws.caption, ...body.caption };
@@ -30,6 +40,6 @@ export async function PATCH(req: NextRequest) {
   if (Array.isArray(body.assets)) ws.assets = body.assets;
   if (Array.isArray(body.issues)) ws.issues = body.issues;
   if ("last_agent_trace" in body) ws.last_agent_trace = body.last_agent_trace ?? null;
-  saveWorkspace(ws, undefined, scope);
+  saveWorkspace(ws, projectId, scope);
   return NextResponse.json({ workspace: ws });
 }

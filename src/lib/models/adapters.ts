@@ -349,6 +349,74 @@ Return JSON only:
   return extractJson(raw);
 }
 
+/** Combined vision pass: OCR correction + visual role filtering + image text QA. */
+export async function llmImageDeepReview(
+  imageDataUrl: string,
+  boxes: OcrBox[],
+  kit: BrandKit,
+  imageSize: { width: number; height: number }
+): Promise<{
+  corrections: {
+    box_id: string;
+    corrected_text: string;
+    confidence?: number;
+    reason?: string;
+  }[];
+  classifications: OcrVisualClassification[];
+  detected_boxes?: {
+    text: string;
+    bbox: [number, number, number, number];
+    confidence?: number;
+    reason?: string;
+  }[];
+  ocr_review: { box_id: string; status: string; reason: string }[];
+  issues: LLMIssueCandidate[];
+} | null> {
+  const system = `You are Typolice's visual text QA agent for Vietnamese social media images.
+
+Use ONE pass to do four jobs:
+1. Correct OCR text for the provided boxes using the image as ground truth.
+2. Classify each OCR box as graphic_text, logo_wordmark, decorative_text, icon_noise, or unknown.
+3. If OCR boxes are empty or clearly miss obvious graphic text, return detected_boxes for important visible graphic text only.
+4. Find concrete copy issues in graphic text: spelling, spacing, punctuation, hashtag, brand_term, terminology, grammar, style, ambiguity.
+
+Rules:
+- Only check text/copy. Do not report design, crop, safe-zone, contrast, alignment, layout, or visual aesthetics.
+- Skip standalone type logos, wordmarks, brand lockups, icons, and decorative texture text.
+- Do not skip footer text, dates, event details, labels, links, disclaimers, headings, CTAs, or poster copy.
+- For hashtags, only flag invalid format. Do not require allowed hashtag lists.
+- For each issue, original must be an exact substring of an OCR/detected text box.
+- If uncertain, use severity "needs_review", confidence <= 0.74, is_definite_error=false.
+- Never change protected brand terms unless Brand Kit explicitly says they are wrong.
+- detected_boxes bbox must be in the provided image pixel coordinates, within width=${imageSize.width}, height=${imageSize.height}.
+
+Return JSON only:
+{"corrections":[{"box_id":"...","corrected_text":"...","confidence":0.0,"reason":"..."}],"classifications":[{"box_id":"...","role":"graphic_text|logo_wordmark|decorative_text|icon_noise|unknown","should_check":true,"confidence":0.0,"reason":"..."}],"detected_boxes":[{"text":"...","bbox":[0,0,100,40],"confidence":0.0,"reason":"..."}],"ocr_review":[{"box_id":"...","status":"ok|possibly_wrong|needs_human_review","reason":"..."}],"issues":[{"box_id":"...","type":"spelling|spacing|punctuation|hashtag|brand_term|terminology|grammar|style|ambiguity","severity":"critical|high|medium|low|suggestion|needs_review","original":"...","suggestion":"...","reason":"...","confidence":0.0,"is_definite_error":true,"self_check":{"exact_substring":true,"visible_or_in_ocr":true,"not_ocr_uncertainty":true,"not_protected_term":true}}]}`;
+
+  const ocrPayload = boxes.map((b) => ({
+    box_id: b.box_id,
+    text: b.text,
+    confidence: b.confidence,
+    bbox: b.bbox,
+    visual_role: b.visual_role,
+    visual_should_check: b.visual_should_check,
+  }));
+  const raw = await chat("image_qa", [
+    { role: "system", content: system },
+    {
+      role: "user",
+      content: [
+        {
+          type: "text",
+          text: `Brand Kit:\n${brandKitForPrompt(kit)}\n\nImage size sent to you: ${imageSize.width}x${imageSize.height}\n\nOCR boxes:\n${JSON.stringify(ocrPayload, null, 2)}`,
+        },
+        { type: "image_url", image_url: { url: imageDataUrl } },
+      ],
+    },
+  ], { maxTokens: 4200, timeoutMs: 32_000 });
+  return extractJson(raw);
+}
+
 /** 22.4 Final report — MiniMax. Falls back to a deterministic template when not configured. */
 export async function llmReport(
   workspaceName: string,

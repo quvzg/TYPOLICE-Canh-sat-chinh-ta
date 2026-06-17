@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import fs from "fs";
 import path from "path";
 import { deviceScopeFromRequest, getWorkspace, saveWorkspace, uploadsDir } from "@/lib/server/db";
 import { loadBrandKit } from "@/lib/brand/brandGuidelineLoader";
@@ -13,9 +12,10 @@ import {
   type DateFormatToken,
 } from "@/lib/qa/ruleChecker";
 import { mergeIssues, summarize, validateLLMIssues } from "@/lib/qa/issueMerger";
-import { llmCaptionQA, llmClassifyOcrBoxes, llmImageCrossCheck, llmOcrTextQA, llmVerify, type LLMIssueCandidate } from "@/lib/models/adapters";
+import { llmCaptionQA, llmImageDeepReview, llmOcrTextQA, llmVerify, type LLMIssueCandidate } from "@/lib/models/adapters";
 import { getModelConfig, isModelConfigured, isRoleConfigured } from "@/lib/models/gateway";
-import { runLinkSafetyChecks } from "@/lib/qa/linkSafety";
+import { cachedModelResult, stableHash } from "@/lib/models/modelResultCache";
+import { updateDeepScanCheckpoint, type DeepScanPhase } from "@/lib/qa/deepScanJobs";
 import { protectedTermsFromBrandKit } from "@/lib/qa/protectedText";
 import {
   applyDeterministicOcrVisualRoles,
@@ -23,10 +23,11 @@ import {
   isVisualCheckableOcrBox,
   summarizeOcrVisualRoles,
 } from "@/lib/qa/visualTextFilter";
+import { PRIMARY_CAPTION_ARTBOARD_ID, workspaceTargetFingerprint } from "@/lib/qa/workspaceFingerprint";
+import { imageModelPayload, payloadBboxToOriginal } from "@/lib/ocr/imageModelPayload";
 import type { AgentModelConfig, AgentRunStep, AgentRunTrace, Asset, BrandKit, Issue, OcrBox, Workspace } from "@/types";
 
 type Bbox = NonNullable<Issue["bbox"]>;
-const PRIMARY_CAPTION_ARTBOARD_ID = "artboard_caption";
 const IMAGE_RULE_MIN_CONFIDENCE = 0.62;
 const IMAGE_REVIEW_CONFIDENCE = 0.5;
 const OCR_TEXT_BATCH_MAX_BOXES = 36;
@@ -82,6 +83,7 @@ interface CaptionTarget {
 }
 
 type WorkspaceArtboard = Workspace["artboards"][number];
+type ImageDeepReviewResult = NonNullable<Awaited<ReturnType<typeof llmImageDeepReview>>>;
 
 function artboardKind(ab: Workspace["artboards"][number]) {
   return ab.kind ?? (ab.format === "caption" ? "caption" : ab.format === "note" ? "note" : "visual");
@@ -493,11 +495,30 @@ async function runOcrTextReviewerBatches(
   reviewerName: string,
   boxes: OcrBox[],
   brandKit: BrandKit,
+  brandKitHash: string,
   opts: { maxTokens?: number; timeoutMs?: number } = {}
 ): Promise<LLMIssueCandidate[]> {
   const chunks = chunkOcrBoxes(boxes);
   const results = await mapWithConcurrency(chunks, MODEL_BATCH_CONCURRENCY, async (chunk) => {
-    const { value: issues } = await withModelRetry(() => llmOcrTextQA(role, reviewerName, chunk, brandKit, opts));
+    const { value: issues } = await cachedModelResult({
+      modelRole: role,
+      promptVersion: `ocr-text-review-${reviewerName.toLocaleLowerCase("vi-VN")}-v2`,
+      contentHash: stableHash({
+        role,
+        reviewerName,
+        boxes: chunk.map((box) => ({
+          box_id: box.box_id,
+          text: box.text,
+          confidence: box.confidence,
+          visual_role: box.visual_role,
+          visual_should_check: box.visual_should_check,
+        })),
+      }),
+      brandKitHash,
+    }, async () => {
+      const result = await withModelRetry(() => llmOcrTextQA(role, reviewerName, chunk, brandKit, opts));
+      return result.value;
+    });
     return issues ?? [];
   });
   return results.flat();
@@ -540,6 +561,87 @@ function issueEvidenceSources(issue: Issue): Set<string> {
   return new Set(issue.created_by.split("+").map((source) => source.trim()).filter(Boolean));
 }
 
+function issueModelSignature(issue: Issue): string {
+  return stableHash({
+    type: issue.type,
+    severity: issue.severity,
+    original: normalizedText(issue.original),
+    suggestion: normalizedText(issue.suggestion),
+    source_type: issue.source_type,
+    source_id: issue.source_id,
+    artboard_id: issue.artboard_id,
+    box_id: issue.box_id,
+  });
+}
+
+function comparableIssueText(value: string): string {
+  return value
+    .normalize("NFKC")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLocaleLowerCase("vi-VN");
+}
+
+function levenshteinDistance(a: string, b: string): number {
+  if (a === b) return 0;
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+  const prev = Array.from({ length: b.length + 1 }, (_, index) => index);
+  const curr = Array.from({ length: b.length + 1 }, () => 0);
+  for (let i = 1; i <= a.length; i += 1) {
+    curr[0] = i;
+    for (let j = 1; j <= b.length; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min(curr[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost);
+    }
+    for (let j = 0; j <= b.length; j += 1) prev[j] = curr[j];
+  }
+  return prev[b.length];
+}
+
+function textSimilarity(a: string, b: string): number {
+  const left = comparableIssueText(a);
+  const right = comparableIssueText(b);
+  if (!left && !right) return 1;
+  return 1 - levenshteinDistance(left, right) / Math.max(left.length, right.length, 1);
+}
+
+function digitSignature(value: string): string {
+  return (value.match(/\d+/g) ?? []).join("|");
+}
+
+function protectedTermSurvives(original: string, corrected: string, brandKit: BrandKit): boolean {
+  const originalLower = comparableIssueText(original);
+  const correctedLower = comparableIssueText(corrected);
+  return brandKit.do_not_change.every((term) => {
+    const normalized = comparableIssueText(term);
+    return !normalized || !originalLower.includes(normalized) || correctedLower.includes(normalized);
+  });
+}
+
+function applySafeOcrCorrections(
+  boxes: OcrBox[],
+  corrections: { box_id: string; corrected_text: string; confidence?: number }[] | undefined,
+  brandKit: BrandKit
+): OcrBox[] {
+  const byId = new Map((corrections ?? []).map((item) => [item.box_id, item]));
+  return boxes.map((box) => {
+    const item = byId.get(box.box_id);
+    const text = typeof item?.corrected_text === "string" ? item.corrected_text.replace(/\s+/g, " ").trim() : "";
+    const confidence = typeof item?.confidence === "number" ? Math.max(0, Math.min(1, item.confidence)) : 0;
+    if (!item || !text || confidence < 0.86) return box;
+    if (text.length > 240) return box;
+    if (comparableIssueText(text) === comparableIssueText(box.text)) {
+      return { ...box, confidence: Math.max(box.confidence, Math.min(0.98, confidence)) };
+    }
+    if (digitSignature(box.text) !== digitSignature(text)) return box;
+    if (!protectedTermSurvives(box.text, text, brandKit)) return box;
+    if (textSimilarity(box.text, text) < 0.72) return box;
+    if (box.confidence >= 0.84 && confidence < 0.93 && textSimilarity(box.text, text) < 0.88) return box;
+    return { ...box, text, confidence: Math.max(box.confidence, Math.min(0.98, confidence)) };
+  });
+}
+
 function clusterRelatedIssues(issues: Issue[]): Issue[][] {
   const clusters: Issue[][] = [];
   for (const issue of issues) {
@@ -580,7 +682,28 @@ function acceptStableImageAiIssues(candidates: Issue[], currentIssues: Issue[]):
     const accept = backedByRule || hasIndependentAgreement || hasDefiniteHighConfidence;
 
     if (!accept) {
-      skippedIssues += cluster.length;
+      const suggested = [...cluster].sort((a, b) =>
+        b.confidence - a.confidence ||
+        SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] ||
+        b.original.length - a.original.length
+      )[0];
+      if (suggested && suggested.original.trim()) {
+        const reviewIssue: Issue = {
+          ...suggested,
+          severity: "needs_review",
+          confidence: Math.min(0.74, Math.max(0.5, suggested.confidence)),
+          is_definite_error: false,
+          status: "open",
+          reason: suggested.reason.includes("Typolice cần bạn xác nhận")
+            ? suggested.reason
+            : `${suggested.reason} Typolice cần bạn xác nhận vì lỗi này mới được một bước rà ảnh phát hiện.`,
+          created_by: `${suggested.created_by}+needs_review_staging`,
+        };
+        acceptedCandidates += 1;
+        if (pushUniqueIssue(currentIssues, reviewIssue)) addedIssues += 1;
+      } else {
+        skippedIssues += cluster.length;
+      }
       continue;
     }
 
@@ -605,11 +728,8 @@ function acceptStableImageAiIssues(candidates: Issue[], currentIssues: Issue[]):
   };
 }
 
-function mimeFromStoredName(storedName: string): string {
-  const ext = path.extname(storedName).toLowerCase();
-  if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
-  if (ext === ".webp") return "image/webp";
-  return "image/png";
+function storedAssetName(url: string): string {
+  return path.basename(new URL(url, "http://typolice.local").pathname);
 }
 
 function artboardIdForAsset(artboards: { id: string; layers: { asset_id: string }[] }[], assetId: string): string | null {
@@ -667,11 +787,24 @@ function createDateConsistencyIssue(
 export async function POST(req: NextRequest) {
   const scope = deviceScopeFromRequest(req);
   const {
+    project_id = undefined,
     visual_qa = false,
     caption_llm = false,
+    deep_job_id = null,
+    content_fingerprint = null,
+    defer_save = false,
     target_artboard_id = null,
   } = await req.json().catch(() => ({}));
-  const ws = getWorkspace(undefined, scope);
+  const projectId = typeof project_id === "string" && project_id.trim() ? project_id.trim() : undefined;
+  const deepJobId = typeof deep_job_id === "string" && deep_job_id.trim() ? deep_job_id.trim() : null;
+  const expectedFingerprint = typeof content_fingerprint === "string" && content_fingerprint.trim()
+    ? content_fingerprint.trim()
+    : null;
+  const shouldDeferSave = defer_save === true;
+  const sourceWorkspace = getWorkspace(projectId, scope);
+  const ws = shouldDeferSave
+    ? JSON.parse(JSON.stringify(sourceWorkspace)) as Workspace
+    : sourceWorkspace;
   const targetArtboardId = typeof target_artboard_id === "string" && target_artboard_id.trim()
     ? target_artboard_id.trim()
     : null;
@@ -699,10 +832,17 @@ export async function POST(req: NextRequest) {
     label: "Load brand guidelines",
     tool: "brand_guideline_loader",
     detail: "Read brand terms, preferred spellings, protected terms and style notes.",
-  }, () => loadBrandKit(undefined, scope));
+  }, () => loadBrandKit(projectId, scope));
+  const brandKitHash = stableHash(brandKit);
   const protectedTerms = protectedTermsFromBrandKit(brandKit);
   const allIssues: Issue[] = [];
   const dateCandidates: DateConsistencyCandidate[] = [];
+  const checkpoint = (
+    phase: DeepScanPhase,
+    status: "running" | "completed" | "failed",
+    detail?: string,
+    count?: number
+  ) => updateDeepScanCheckpoint(deepJobId, phase, { status, detail, count });
 
   // ---- 1. Caption QA ----
   const captionTargets = getScopedCaptionTargets(ws, targetArtboard);
@@ -748,6 +888,7 @@ export async function POST(req: NextRequest) {
     ruleStep.count = totalRuleIssues;
 
     if (captionQaOk && caption_llm) {
+      checkpoint("caption_ai", "running", `Đang rà kỹ ${nonEmptyCaptionTargets.length} caption.`);
       const llmStep = addStep(trace, {
         id: "qwen_caption_qa",
         label: "Qwen caption QA",
@@ -771,12 +912,24 @@ export async function POST(req: NextRequest) {
       let keptCandidates = 0;
       let qwenFailures = 0;
       let qwenRetries = 0;
+      let qwenCacheHits = 0;
       let verifierFailures = 0;
       let verifierRetries = 0;
+      let verifierCacheHits = 0;
 
       for (const target of nonEmptyCaptionTargets) {
-        const { value: candidates, retries: captionRetries } = await withModelRetry(() => llmCaptionQA(target.text, brandKit));
-        qwenRetries += captionRetries;
+        const cachedCaption = await cachedModelResult({
+          modelRole: "caption_qa",
+          promptVersion: "caption-qa-v3",
+          contentHash: stableHash({ sourceId: target.sourceId, text: target.text }),
+          brandKitHash,
+        }, async () => {
+          const { value, retries } = await withModelRetry(() => llmCaptionQA(target.text, brandKit));
+          qwenRetries += retries;
+          return value;
+        });
+        const candidates = cachedCaption.value;
+        if (cachedCaption.cacheHit) qwenCacheHits += 1;
         if (!candidates) {
           qwenFailures += 1;
           continue;
@@ -797,10 +950,34 @@ export async function POST(req: NextRequest) {
 
         let kept = validated;
         if (verifierOk && validated.length > 0) {
-          const { value: verified, retries: verifyRetries } = await withModelRetry(() => llmVerify(target.text, brandKit, validated));
-          verifierRetries += verifyRetries;
-          if (verified) {
-            kept = validated.filter((issue) => verified.kept.has(issue.issue_id));
+          const cachedVerify = await cachedModelResult<string[]>({
+            modelRole: "verify",
+            promptVersion: "caption-verifier-v2",
+            contentHash: stableHash({
+              sourceId: target.sourceId,
+              text: target.text,
+              candidates: validated.map((issue) => ({
+                type: issue.type,
+                severity: issue.severity,
+                original: issue.original,
+                suggestion: issue.suggestion,
+                reason: issue.reason,
+              })),
+            }),
+            brandKitHash,
+          }, async () => {
+            const { value, retries } = await withModelRetry(() => llmVerify(target.text, brandKit, validated));
+            verifierRetries += retries;
+            if (!value) return null;
+            return validated
+              .filter((issue) => value.kept.has(issue.issue_id))
+              .map(issueModelSignature);
+          });
+          const verifiedSignatures = cachedVerify.value;
+          if (cachedVerify.cacheHit) verifierCacheHits += 1;
+          if (verifiedSignatures) {
+            const keptSignatures = new Set(verifiedSignatures);
+            kept = validated.filter((issue) => keptSignatures.has(issueModelSignature(issue)));
           } else {
             verifierFailures += 1;
           }
@@ -812,18 +989,19 @@ export async function POST(req: NextRequest) {
       llmStep.duration_ms = Date.now() - llmStarted;
       llmStep.status = qwenFailures === nonEmptyCaptionTargets.length ? "failed" : "completed";
       llmStep.detail = qwenFailures
-        ? `Qwen returned ${returnedCandidates} candidate(s), ${validatedCandidates} validated; ${qwenFailures}/${nonEmptyCaptionTargets.length} caption artboard(s) returned no usable JSON.${qwenRetries ? ` Retried ${qwenRetries} time(s).` : ""}`
-        : `Qwen returned ${returnedCandidates} candidate(s), ${validatedCandidates} validated across ${nonEmptyCaptionTargets.length} caption artboard(s).${qwenRetries ? ` Retried ${qwenRetries} time(s).` : ""}`;
+        ? `Qwen returned ${returnedCandidates} candidate(s), ${validatedCandidates} validated; ${qwenFailures}/${nonEmptyCaptionTargets.length} caption artboard(s) returned no usable JSON.${qwenRetries ? ` Retried ${qwenRetries} time(s).` : ""}${qwenCacheHits ? ` Cache hit ${qwenCacheHits} caption(s).` : ""}`
+        : `Qwen returned ${returnedCandidates} candidate(s), ${validatedCandidates} validated across ${nonEmptyCaptionTargets.length} caption artboard(s).${qwenRetries ? ` Retried ${qwenRetries} time(s).` : ""}${qwenCacheHits ? ` Cache hit ${qwenCacheHits} caption(s).` : ""}`;
       llmStep.count = validatedCandidates;
 
       if (verifierStep) {
         verifierStep.duration_ms = Date.now() - verifierStarted;
         verifierStep.status = verifierFailures > 0 ? "failed" : "completed";
         verifierStep.detail = verifierFailures
-          ? `MiniMax kept ${keptCandidates}/${validatedCandidates} validated LLM issue(s); ${verifierFailures} verifier call(s) were unavailable and kept validated issues for review.${verifierRetries ? ` Retried ${verifierRetries} time(s).` : ""}`
-          : `MiniMax kept ${keptCandidates}/${validatedCandidates} validated LLM issue(s).${verifierRetries ? ` Retried ${verifierRetries} time(s).` : ""}`;
+          ? `MiniMax kept ${keptCandidates}/${validatedCandidates} validated LLM issue(s); ${verifierFailures} verifier call(s) were unavailable and kept validated issues for review.${verifierRetries ? ` Retried ${verifierRetries} time(s).` : ""}${verifierCacheHits ? ` Cache hit ${verifierCacheHits} caption(s).` : ""}`
+          : `MiniMax kept ${keptCandidates}/${validatedCandidates} validated LLM issue(s).${verifierRetries ? ` Retried ${verifierRetries} time(s).` : ""}${verifierCacheHits ? ` Cache hit ${verifierCacheHits} caption(s).` : ""}`;
         verifierStep.count = keptCandidates;
       }
+      checkpoint("caption_ai", "completed", `Đã rà kỹ caption, giữ ${keptCandidates} lỗi contextual.`, keptCandidates);
     } else {
       skipStep(trace, {
         id: "qwen_caption_qa",
@@ -843,6 +1021,7 @@ export async function POST(req: NextRequest) {
           ? "Skipped because Qwen caption QA was not requested in this fast scan."
           : "Skipped because verifier role is not configured.",
       });
+      checkpoint("caption_ai", "completed", captionQaOk ? "Bỏ qua ở fast run." : "Chưa cấu hình model caption.", 0);
     }
 
     for (const target of nonEmptyCaptionTargets) {
@@ -870,38 +1049,7 @@ export async function POST(req: NextRequest) {
       model: models.verify,
       detail: "Skipped because all caption artboards are empty.",
     });
-  }
-
-  // ---- 2. QR codes + text links. Links printed inside images are intentionally skipped. ----
-  const linkSafetyCaption = !targetArtboard ||
-    (targetKind === "caption" && targetArtboard.id === PRIMARY_CAPTION_ARTBOARD_ID)
-    ? ws.caption
-    : { ...ws.caption, text: "" };
-  const linkSafetyArtboards = !targetArtboard
-    ? ws.artboards
-    : targetKind === "caption" && targetArtboard.id !== PRIMARY_CAPTION_ARTBOARD_ID
-      ? [targetArtboard]
-      : targetKind === "visual"
-        ? [targetArtboard]
-        : [];
-  const linkSafety = await runStep(trace, {
-    id: "qr_link_safety",
-    label: "QR & link safety",
-    tool: "jsQR + URL probe",
-    detail: "Decode QR codes on image assets and check links from caption/note artboards. Links printed inside image text are skipped.",
-  }, () => runLinkSafetyChecks({
-    caption: linkSafetyCaption,
-    artboards: linkSafetyArtboards,
-    assets: qaAssets,
-    getAssetFilePath: (asset) => path.join(uploadsDir(undefined, scope), path.basename(asset.url)),
-  }));
-  for (const issue of linkSafety.issues) {
-    pushUniqueIssue(allIssues, issue);
-  }
-  const linkSafetyStep = trace.steps.find((s) => s.id === "qr_link_safety");
-  if (linkSafetyStep) {
-    linkSafetyStep.detail = `Checked ${linkSafety.scannedLinks} link/QR payload(s), decoded ${linkSafety.scannedQrCodes} QR code(s), ${linkSafety.reachableLinks} reachable. Found ${linkSafety.issues.length} link safety issue(s).${linkSafety.threatApiUsed ? " Web Risk lookup was used." : " Threat API not configured; used local safety + reachability checks."}`;
-    linkSafetyStep.count = linkSafety.issues.length;
+    checkpoint("caption_ai", "completed", "Không có caption để rà kỹ.", 0);
   }
 
   // ---- 2. Read image text once, then run batched text-only image QA ----
@@ -930,11 +1078,12 @@ export async function POST(req: NextRequest) {
         detail: "Extract visible text boxes from poster/carousel images.",
       })
     : null;
+  checkpoint("ocr", "running", qaAssets.length ? `Đang đọc chữ trên ${qaAssets.length} ảnh.` : "Không có ảnh để đọc.", qaAssets.length);
   const ocrRuntime = qaAssets.length ? await import("@/lib/ocr/ocrService") : null;
 
   for (const asset of qaAssets) {
-    const storedName = path.basename(asset.url);
-    const filePath = path.join(uploadsDir(undefined, scope), storedName);
+    const storedName = storedAssetName(asset.url);
+    const filePath = path.join(uploadsDir(projectId, scope), storedName);
 
     if (
       asset.ocr_status === "pending" ||
@@ -965,12 +1114,121 @@ export async function POST(req: NextRequest) {
       `Read ${ocrAssets} new/stale image(s), reused ${Math.max(0, qaAssets.length - ocrAssets)} cached image(s), found ${ocrBoxes} text area(s).${ocrFailures ? ` ${ocrFailures} image(s) could not be read.` : ""}`,
       ocrBoxes
     );
+    checkpoint("ocr", "completed", `Đã đọc ${ocrBoxes} vùng chữ trên ảnh.`, ocrBoxes);
   } else {
     skipStep(trace, {
       id: "tesseract_ocr",
       label: "Đọc chữ trên ảnh",
       tool: "tesseract.js + sharp preprocessing",
       detail: "Skipped because no image assets are in the workspace.",
+    });
+    checkpoint("ocr", "completed", "Không có ảnh để đọc.", 0);
+  }
+
+  const imageDeepReviewByAsset = new Map<string, ImageDeepReviewResult>();
+  const assetsForCombinedVision = imageQaOk
+    ? qaAssets.filter((asset) => (
+        asset.ocr_status !== "failed" &&
+        (visual_qa || asset.ocr_status === "low_confidence" || asset.ocr_boxes.length === 0)
+      ))
+    : [];
+  const combinedVisionStep = qaAssets.length && imageQaOk
+    ? addStep(trace, {
+        id: "gemma_combined_image_review",
+        label: "Rà ảnh một lượt",
+        model_role: "image_qa",
+        model: models.image_qa,
+        detail: "Dùng một ảnh đã resize/compress để sửa OCR, lọc vùng graphic text và tìm lỗi chữ trên ảnh.",
+      })
+    : null;
+  if (combinedVisionStep) {
+    if (assetsForCombinedVision.length > 0) {
+      const started = Date.now();
+      let payloadCacheHits = 0;
+      let modelCacheHits = 0;
+      let detectedBoxes = 0;
+      const results = await mapWithConcurrency(assetsForCombinedVision, VISION_ASSET_CONCURRENCY, async (asset) => {
+        try {
+          const storedName = storedAssetName(asset.url);
+          const filePath = path.join(uploadsDir(projectId, scope), storedName);
+          const payload = await imageModelPayload(filePath, asset.hash);
+          if (payload.cacheHit) payloadCacheHits += 1;
+          const cached = await cachedModelResult<ImageDeepReviewResult>({
+            modelRole: "image_qa",
+            promptVersion: "image-deep-review-v1",
+            contentHash: stableHash({
+              assetHash: asset.hash,
+              payload: { width: payload.width, height: payload.height },
+              boxes: asset.ocr_boxes.map((box) => ({
+                box_id: box.box_id,
+                text: box.text,
+                confidence: box.confidence,
+                bbox: box.bbox,
+                visual_role: box.visual_role,
+                visual_should_check: box.visual_should_check,
+              })),
+            }),
+            brandKitHash,
+          }, async () => {
+            const modelResult = await withModelRetry(() => llmImageDeepReview(
+              payload.dataUrl,
+              asset.ocr_boxes,
+              brandKit,
+              { width: payload.width, height: payload.height }
+            ));
+            return modelResult.value;
+          });
+          if (cached.cacheHit) modelCacheHits += 1;
+          if (!cached.value) return false;
+          const extraBoxes = (cached.value.detected_boxes ?? [])
+            .filter((box) => typeof box.text === "string" && box.text.trim() && Array.isArray(box.bbox))
+            .slice(0, 16)
+            .map((box, index): OcrBox => ({
+              box_id: `ocr_v5_${asset.hash.slice(0, 8)}_vision_${index}`,
+              asset_id: asset.id,
+              text: box.text.replace(/\s+/g, " ").trim(),
+              confidence: Math.max(0.35, Math.min(0.82, typeof box.confidence === "number" ? box.confidence : 0.62)),
+              bbox: payloadBboxToOriginal(box.bbox, payload),
+              language: "vi",
+              visual_role: "unknown",
+              visual_should_check: true,
+              visual_confidence: Math.max(0.35, Math.min(0.82, typeof box.confidence === "number" ? box.confidence : 0.62)),
+              visual_reason: box.reason || "Vision phát hiện vùng chữ có thể OCR bỏ sót.",
+            }));
+          if (extraBoxes.length) {
+            const existing = new Set(asset.ocr_boxes.map((box) => comparableIssueText(box.text)));
+            const unique = extraBoxes.filter((box) => !existing.has(comparableIssueText(box.text)));
+            asset.ocr_boxes.push(...unique);
+            detectedBoxes += unique.length;
+            asset.ocr_status = ocrStatusForBoxes(asset.ocr_boxes);
+          }
+          imageDeepReviewByAsset.set(asset.id, cached.value);
+          return true;
+        } catch (err) {
+          console.error("[run-qa] combined image review failed:", err instanceof Error ? err.message : err);
+          return false;
+        }
+      });
+      combinedVisionStep.duration_ms = Date.now() - started;
+      completeStep(
+        combinedVisionStep,
+        `Rà một lượt ${results.filter(Boolean).length}/${assetsForCombinedVision.length} ảnh.${payloadCacheHits ? ` Payload cache ${payloadCacheHits}.` : ""}${modelCacheHits ? ` Model cache ${modelCacheHits}.` : ""}${detectedBoxes ? ` Phát hiện thêm ${detectedBoxes} vùng chữ cần xem.` : ""}`,
+        results.filter(Boolean).length
+      );
+    } else {
+      combinedVisionStep.status = "skipped";
+      combinedVisionStep.detail = visual_qa
+        ? "Skipped because no readable image text was found."
+        : "Skipped because image text was already clear enough for fast check.";
+      combinedVisionStep.count = 0;
+    }
+  } else {
+    skipStep(trace, {
+      id: "gemma_combined_image_review",
+      label: "Rà ảnh một lượt",
+      model_role: "image_qa",
+      model: models.image_qa,
+      detail: imageQaOk ? "Bỏ qua vì chưa có ảnh trong workspace." : "Bỏ qua vì chưa cấu hình bước đọc chữ trên ảnh.",
     });
   }
 
@@ -981,6 +1239,7 @@ export async function POST(req: NextRequest) {
         (visual_qa || asset.ocr_status === "low_confidence")
       ))
     : [];
+  checkpoint("image_ai", "running", qaAssets.length ? `Đang rà kỹ chữ trên ${qaAssets.length} ảnh.` : "Không có ảnh để rà kỹ.", qaAssets.length);
   visionCorrectionCandidates = assetsForCorrection.length;
   const correctionStep = qaAssets.length && imageQaOk
     ? addStep(trace, {
@@ -996,15 +1255,12 @@ export async function POST(req: NextRequest) {
 
   if (correctionStep) {
     if (assetsForCorrection.length > 0) {
-      const { correctOcrWithVision } = await import("@/lib/ocr/ocrVisionCorrection");
       const started = Date.now();
       const results = await mapWithConcurrency(assetsForCorrection, VISION_ASSET_CONCURRENCY, async (asset) => {
         try {
-          const storedName = path.basename(asset.url);
-          const filePath = path.join(uploadsDir(undefined, scope), storedName);
-          const { value: correctedBoxes } = await withModelRetry(() => correctOcrWithVision(filePath, asset.ocr_boxes, brandKit));
-          if (!correctedBoxes) throw new Error("Vision correction returned no result.");
-          asset.ocr_boxes = correctedBoxes;
+          const review = imageDeepReviewByAsset.get(asset.id);
+          if (!review) return false;
+          asset.ocr_boxes = applySafeOcrCorrections(asset.ocr_boxes, review.corrections, brandKit);
           asset.ocr_status = ocrStatusForBoxes(asset.ocr_boxes);
           return true;
         } catch (err) {
@@ -1055,13 +1311,9 @@ export async function POST(req: NextRequest) {
     if (visual_qa && imageQaOk && classifiableAssets.length > 0) {
       const results = await mapWithConcurrency(classifiableAssets, VISION_ASSET_CONCURRENCY, async (asset) => {
         try {
-          const storedName = path.basename(asset.url);
-          const filePath = path.join(uploadsDir(undefined, scope), storedName);
-          const buf = fs.readFileSync(filePath);
-          const dataUrl = `data:${mimeFromStoredName(storedName)};base64,${buf.toString("base64")}`;
-          const { value: result } = await withModelRetry(() => llmClassifyOcrBoxes(dataUrl, asset.ocr_boxes, brandKit));
-          if (result?.classifications) {
-            asset.ocr_boxes = applyVisionOcrVisualRoles(asset.ocr_boxes, result.classifications);
+          const review = imageDeepReviewByAsset.get(asset.id);
+          if (review?.classifications?.length) {
+            asset.ocr_boxes = applyVisionOcrVisualRoles(asset.ocr_boxes, review.classifications);
             return true;
           }
         } catch (err) {
@@ -1183,7 +1435,7 @@ export async function POST(req: NextRequest) {
         detail: "Deep scan: batched review of image text areas with Vietnamese caption QA logic, without design/layout checks.",
       })
     : null;
-  const minimaxImageTextStep = qaAssets.length && verifierOk
+  const minimaxImageTextStep = qaAssets.length && verifierOk && visual_qa
     ? addStep(trace, {
         id: "minimax_image_text_qa",
         label: "Soát chéo chữ trên ảnh",
@@ -1212,7 +1464,7 @@ export async function POST(req: NextRequest) {
 
     const started = Date.now();
     try {
-      const candidates = await runOcrTextReviewerBatches(role, reviewerName, boxesForReview, brandKit, opts);
+      const candidates = await runOcrTextReviewerBatches(role, reviewerName, boxesForReview, brandKit, brandKitHash, opts);
       const validated = validateWorkspaceOcrTextCandidates(
         candidates,
         allBoxMetaById,
@@ -1313,12 +1565,7 @@ export async function POST(req: NextRequest) {
       const started = Date.now();
       const results = await mapWithConcurrency(assetsForVisionCrossCheck, VISION_ASSET_CONCURRENCY, async (asset) => {
         try {
-          const storedName = path.basename(asset.url);
-          const filePath = path.join(uploadsDir(undefined, scope), storedName);
-          const buf = fs.readFileSync(filePath);
-          const dataUrl = `data:${mimeFromStoredName(storedName)};base64,${buf.toString("base64")}`;
-          const checkableBoxes = asset.ocr_boxes.filter(isVisualCheckableOcrBox);
-          const { value: result } = await withModelRetry(() => llmImageCrossCheck(dataUrl, checkableBoxes, brandKit));
+          const result = imageDeepReviewByAsset.get(asset.id);
           return validateWorkspaceOcrTextCandidates(
             result?.issues ?? [],
             allBoxMetaById,
@@ -1356,6 +1603,14 @@ export async function POST(req: NextRequest) {
       detail: imageQaOk ? "Bỏ qua vì chưa có ảnh trong workspace." : "Bỏ qua vì chưa cấu hình bước đọc chữ trên ảnh.",
     });
   }
+  checkpoint(
+    "image_ai",
+    "completed",
+    qaAssets.length
+      ? `Đã rà kỹ chữ trên ảnh: ${qwenImageTextValidated + minimaxImageTextValidated + visionCrossCheckValidated} candidate.`
+      : "Không có ảnh để rà kỹ.",
+    qwenImageTextValidated + minimaxImageTextValidated + visionCrossCheckValidated
+  );
 
   const imageAiConsensusStep = qaAssets.length
     ? addStep(trace, {
@@ -1366,6 +1621,7 @@ export async function POST(req: NextRequest) {
       })
     : null;
   if (imageAiConsensusStep) {
+    checkpoint("self_check", "running", "Đang tự lọc các lỗi ảnh đủ chắc trước khi hiển thị.");
     const result = acceptStableImageAiIssues(imageAiCandidates, allIssues);
     qwenImageTextIssues = allIssues.filter((issue) => issue.created_by.includes("qwen_image_text_qa")).length;
     minimaxImageTextIssues = allIssues.filter((issue) => issue.created_by.includes("minimax_image_text_qa")).length;
@@ -1375,6 +1631,9 @@ export async function POST(req: NextRequest) {
       `Đã tự kiểm tra ${result.stagedIssues} lỗi chữ trên ảnh; hiển thị ${result.acceptedClusters} nhóm lỗi đủ chắc, bỏ qua ${result.skippedIssues} lỗi chưa đủ tin cậy.`,
       result.addedIssues
     );
+    checkpoint("self_check", "completed", `Hiển thị ${result.addedIssues} lỗi ảnh đủ chắc.`, result.addedIssues);
+  } else {
+    checkpoint("self_check", "completed", "Không có lỗi ảnh cần tự lọc.", 0);
   }
 
   const dateConsistencyStep = addStep(trace, {
@@ -1409,6 +1668,7 @@ export async function POST(req: NextRequest) {
   }
 
   // ---- Preserve prior user decisions (accepted/ignored) by issue identity ----
+  checkpoint("merge", "running", "Đang merge kết quả rà kỹ vào workspace.");
   const mergeStep = addStep(trace, {
     id: "merge_user_decisions",
     label: "Merge with human decisions",
@@ -1424,7 +1684,12 @@ export async function POST(req: NextRequest) {
     const prev = prior.get(`${issue.source_type}|${issue.source_id}|${issue.original}|${issue.suggestion}`);
     if (prev) issue.status = prev;
   }
-  const workspaceToSave = targetArtboard ? getWorkspace(undefined, scope) : ws;
+  const workspaceToSave = targetArtboard
+    ? shouldDeferSave
+      ? JSON.parse(JSON.stringify(getWorkspace(projectId, scope))) as Workspace
+      : getWorkspace(projectId, scope)
+    : ws;
+  workspaceToSave.assets = ws.assets;
   const preservedOutsideTarget = targetArtboard
     ? workspaceToSave.issues.filter((issue) => !issueBelongsToTarget(issue, targetArtboard, targetAssetIds))
     : [];
@@ -1450,12 +1715,34 @@ export async function POST(req: NextRequest) {
   workspaceToSave.issues = finalIssues;
   trace.completed_at = new Date().toISOString();
   workspaceToSave.last_agent_trace = trace;
-  saveWorkspace(workspaceToSave, undefined, scope);
+  const currentWorkspace = getWorkspace(projectId, scope);
+  const staleResult = Boolean(
+    expectedFingerprint &&
+    expectedFingerprint !== workspaceTargetFingerprint(currentWorkspace, targetArtboardId)
+  );
+  if (staleResult) {
+    checkpoint("merge", "failed", "Nội dung đã đổi trong lúc rà kỹ; không lưu kết quả cũ.", finalIssues.length);
+    return NextResponse.json({
+      error: "stale_content",
+      stale: true,
+      summary: summarize(finalIssues),
+      llm_used: llmOk,
+      agent_trace: trace,
+    }, { status: 409 });
+  }
+
+  if (!shouldDeferSave) {
+    saveWorkspace(workspaceToSave, projectId, scope);
+    checkpoint("merge", "completed", `Đã merge ${finalIssues.length} issue vào workspace.`, finalIssues.length);
+  } else {
+    checkpoint("merge", "completed", `Đã chuẩn bị ${finalIssues.length} issue để commit an toàn.`, finalIssues.length);
+  }
 
   return NextResponse.json({
     workspace: workspaceToSave,
     summary: summarize(finalIssues),
     llm_used: llmOk,
     agent_trace: trace,
+    stale: staleResult,
   });
 }

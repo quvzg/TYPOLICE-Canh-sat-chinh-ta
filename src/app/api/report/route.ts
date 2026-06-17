@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { deviceScopeFromRequest, getWorkspace } from "@/lib/server/db";
+import { deviceScopeFromRequest, getWorkspace, listProjects } from "@/lib/server/db";
 import { summarize } from "@/lib/qa/issueMerger";
 import { applyPatches } from "@/lib/qa/patchService";
 import { llmReport } from "@/lib/models/adapters";
@@ -54,7 +54,11 @@ function fallbackReport(name: string, summary: QASummary, issues: Issue[], corre
 export async function GET(req: NextRequest) {
   const scope = deviceScopeFromRequest(req);
   const format = req.nextUrl.searchParams.get("format") ?? "markdown";
-  const ws = getWorkspace(undefined, scope);
+  const projectId = req.nextUrl.searchParams.get("project_id")?.trim() || undefined;
+  if (!projectId && listProjects(scope).length > 1) {
+    return NextResponse.json({ error: "project_id required" }, { status: 400 });
+  }
+  const ws = getWorkspace(projectId, scope);
   const summary = summarize(ws.issues);
   const { text: corrected } = applyPatches(ws.caption.text, ws.issues, "definite");
   const monthly = buildMonthlyReportData(ws, summary);
