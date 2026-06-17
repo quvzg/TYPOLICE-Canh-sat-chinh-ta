@@ -1,5 +1,11 @@
 # Typolice - Cảnh sát chính tả
 
+## Mô tả ngắn
+
+Typolice giúp đội Marketing/Truyền thông bắt typo, kiểm tra guideline trên caption và hình ảnh, rồi xuất report PDF/Excel để duyệt nội dung nhanh và đúng brand hơn.
+
+## Giới thiệu
+
 BẠN SẼ TIẾP TỤC MẮC LỖI CHÍNH TẢ. Trừ khi bạn sử dụng Typolice - một agent để bắt typo, kiểm tra compliance và giúp bạn vượt qua vòng duyệt nội dung dễ dàng.
 
 Mỗi ngày, các đội ngũ Marketing và Truyền thông phải xử lý hàng chục bài đăng, ấn phẩm và nội dung chiến dịch. Chỉ một lỗi chính tả, một từ ngữ không phù hợp hoặc một chi tiết sai guideline cũng có thể khiến nội dung bị trả về, làm chậm tiến độ và ảnh hưởng đến hình ảnh thương hiệu.
@@ -10,161 +16,232 @@ Thay vì chỉ liệt kê lỗi, Typolice giúp người dùng nhìn thấy bứ
 
 Hãy khám phá Typolice và gia nhập Cục Bảo Hộ Quyền Chính Tả ngay hôm nay!
 
-## Tính năng của agent
+## Người dùng
 
-- Kiểm tra typo, spacing, punctuation, hashtag format, brand term và guideline compliance cho caption tiếng Việt.
-- Scan chữ trên ảnh/poster/banner, bỏ qua logo hoặc vùng trang trí để tập trung vào graphic text cần duyệt.
-- Chạy workflow nhiều bước: rule deterministic trước, AI deep check sau, verifier chống false positive, rồi merge kết quả vào từng card nội dung.
-- Hỗ trợ nhiều caption card và image check card trong cùng một luồng review, mỗi card có issue riêng để dễ theo dõi.
-- Cho phép Accept, Ignore, thêm từ vào guideline/dictionary và xem gợi ý sửa ngay tại vị trí lỗi.
-- Tạo project riêng cho từng chiến dịch/thương hiệu, kèm guideline, terminology và rule kiểm duyệt riêng theo project.
-- Hỗ trợ upload guideline thân thiện hơn cho non-tech user như PDF, DOC/DOCX, Excel/CSV và JSON/Markdown.
-- Xuất report PDF tổng quan và Excel log chi tiết để tracking lỗi, xu hướng vi phạm và hiệu suất kiểm duyệt.
-- Tích hợp GreenNode AgentBase/MaaS với Qwen, MiniMax, Gemma; có Gemini như external fallback cho image text/deep visual review khi cần.
-- Không commit API key vào source; secret được đọc từ runtime environment trên server.
+- Marketing, Social, Branding, Internal Comms và Content team.
+- Người duyệt nội dung cần kiểm tra nhiều caption/poster trước khi publish.
+- Team campaign cần guideline riêng cho từng thương hiệu, sự kiện hoặc dự án.
 
-## Claw-a-thon positioning
+## Vấn đề
 
-**Track:** Automation & Integration.
+- Caption và poster dễ dính typo, spacing, punctuation, hashtag sai format hoặc lỗi brand term.
+- Text trên ảnh khó kiểm thủ công, đặc biệt khi có nhiều banner/poster cùng lúc.
+- Guideline theo từng campaign dễ bị áp dụng nhầm hoặc bị bỏ sót.
+- Manager cần report để biết lỗi nào lặp lại nhiều và nội dung nào đang vi phạm guideline.
 
-**Problem:** Social/marketing teams mất nhiều thời gian soi thủ công caption, poster text, hashtag, brand spelling và guideline trước khi publish.
+## Giải pháp
 
-**Agent solution:** Typolice tự chạy workflow QA end-to-end: đọc guideline, OCR ảnh, kiểm tra rule chắc chắn, gọi nhiều model để review ngữ cảnh/vision/verifier, lưu human decision, học guideline mới và xuất report.
+Typolice là AI Agent kiểm duyệt content theo workflow rõ ràng:
 
-**Value:** giảm thao tác lặp lại trước khi publish, giảm lỗi brand/copy, vẫn giữ human-in-loop cho quyết định cuối.
+1. Chạy rule deterministic trước để trả kết quả nhanh và ổn định.
+2. Đọc chữ trên ảnh bằng OCR nhiều pass, bỏ qua logo/type logo và vùng trang trí.
+3. Dùng model AI để deep check caption, chữ trên ảnh và verifier chống false positive.
+4. Merge kết quả theo từng card nội dung, giữ quyết định Checked/Ignore của user.
+5. Tạo report PDF tổng quan và Excel log chi tiết để tracking chất lượng nội dung.
 
-## External model disclosure
+## Tính năng hiện tại
 
-Typolice ưu tiên workflow deterministic rules + AgentBase/MaaS-compatible model routing. Bản demo cũng có cấu hình **Google Gemini** như một external model provider cho phần image text scan/deep visual review khi cần tăng độ chính xác đọc chữ trên ảnh.
+- **Checker mode**: tạo nhiều caption card và image card để kiểm nhiều nội dung trong một luồng.
+- **Project mode**: mở workspace dạng space/canvas cho campaign, có thể thêm artboard caption, note và layout ảnh social.
+- **Guidelines theo project**: upload guideline riêng cho từng project; guideline chỉ áp dụng trong project đó.
+- **Rule tổng của app**: giữ các spelling/brand/common rule nền để kiểm tra nhanh mà không cần model.
+- **Run theo card**: bấm Run ở card nào thì chỉ check card đó, không làm ảnh hưởng card khác.
+- **Fast result + deep result**: kết quả nhanh hiện trước, deep scan tự chạy nền và merge thêm khi xong.
+- **Coverage status**: mỗi card hiển thị Checked, Still checking, Needs review hoặc Could not fully read.
+- **Cache thông minh**: reuse kết quả theo content hash, brand kit hash, prompt version và model role.
+- **OCR tối ưu**: warm scan khi upload/drop ảnh, multi-pass OCR, không cache rỗng vĩnh viễn.
+- **Image text QA**: chỉ check lỗi chữ trên ảnh; không check lỗi design như safe zone/crop/layout.
+- **Issue review**: hover lỗi ngay trên text/ảnh, xem lý do, suggestion và chọn Checked/Ignore/+Dict.
+- **Issue panel theo card**: tab Issues gom lỗi theo từng caption/image card, có thể thu gọn từng nhóm.
+- **Report**: export PDF report và Excel log cho nội dung đã kiểm.
+- **Guideline viewer**: user có thể xem lại file guideline đã upload.
+- **Light/Dark mode**: giao diện mặc định light mode, có toggle đổi theme.
 
-- External provider used: **Google Gemini API**.
-- Current external role: `MODEL_IMAGE_QA=gemini`.
+## Luồng sử dụng
+
+### 1. Quick Checker
+
+1. Mở app, chọn **Checker**.
+2. Nhập caption vào card đầu tiên hoặc bấm **Add New Caption** để thêm nhiều caption.
+3. Upload hoặc kéo thả poster/banner vào **Visual Text Scanner**.
+4. Bấm nút **Run** trên từng card.
+5. Typolice hiện lỗi ngay trên text/ảnh và gom lỗi theo card trong tab **Issues**.
+6. User chọn **Checked** cho lỗi đã tự xem lại, **Ignore** nếu không áp dụng, hoặc **+Dict** để thêm vào guideline/dictionary.
+7. Tải **PDF report** hoặc **Excel log** khi cần bàn giao/tracking.
+
+### 2. Project Space
+
+1. Chọn **Project** để vào workspace dạng canvas.
+2. Tạo project cho từng campaign/thương hiệu.
+3. Thêm caption artboard, note artboard hoặc layout ảnh Facebook/LinkedIn.
+4. Upload guideline riêng của project.
+5. Click hoặc kéo thả ảnh vào đúng slot của layout.
+6. Run từng artboard; kết quả chỉ áp dụng cho artboard/card đang kiểm.
+7. Xuất report cho project khi hoàn tất review.
+
+## Guideline upload
+
+Typolice hỗ trợ các định dạng thân thiện cho non-tech user:
+
+- PDF
+- DOC/DOCX
+- XLS/XLSX/CSV
+- JSON
+- Markdown
+
+Khuyến nghị cho team non-tech:
+
+- Dùng **PDF/DOCX** nếu guideline là tài liệu mô tả tone of voice, cách viết, term cần tránh.
+- Dùng **Excel/CSV** nếu guideline là bảng thuật ngữ: sai/đúng, do-not-change, preferred wording.
+- Dùng **JSON/Markdown** nếu team kỹ thuật muốn kiểm soát cấu trúc rõ hơn.
+
+Guideline upload trong project sẽ bổ sung/override rule nền cho project đang mở. Nếu user upload file mới hoặc cập nhật guideline trong UI, app sẽ đọc lại guideline cho lần Run tiếp theo.
+
+## Model orchestration
+
+Typolice ưu tiên deterministic rules trước, sau đó dùng AI theo role:
+
+- **Qwen**: caption QA, tìm lỗi tiếng Việt/ngữ cảnh/brand/style.
+- **MiniMax**: verifier chống false positive và viết report.
+- **Gemma**: vision OCR correction và image text QA trên AgentBase/MaaS.
+- **Gemini optional**: external fallback cho image QA khi cần tăng khả năng đọc chữ trên ảnh.
+
+External model disclosure:
+
+- External provider optional: **Google Gemini API**.
+- Current optional role: `MODEL_IMAGE_QA=gemini`.
 - Default external model id: `gemini-2.5-flash-lite`.
-- API key is provided only through runtime environment variables such as `GEMINI_API_KEY`; it is never committed to GitHub, Dockerfile, or client-side code.
-- If deploying to AgentBase, set `GEMINI_API_KEY` and related model routing variables in the runtime environment file or AgentBase runtime env.
+- API key chỉ được truyền qua runtime environment như `GEMINI_API_KEY`.
+- Không commit API key vào GitHub, Dockerfile hoặc client-side code.
 
-AgentBase/MaaS fallback: when deployed on AgentBase, Typolice can also use the runtime-injected `GREENNODE_CLIENT_ID` and `GREENNODE_CLIENT_SECRET` to obtain an active GreenNode AIP LLM key and discover enabled Qwen/MiniMax/Gemma model paths. This keeps the app usable even when `AI_GATEWAY_API_KEY` is not provided manually.
+AgentBase/MaaS fallback:
 
-## Chạy app
+- Khi chạy trên GreenNode AgentBase, app có thể dùng `GREENNODE_CLIENT_ID` và `GREENNODE_CLIENT_SECRET` do runtime inject để lấy GreenNode AIP/MaaS access.
+- Nếu `AI_GATEWAY_API_KEY` không được set thủ công, server có thể fallback sang IAM/AIP theo cấu hình runtime.
+
+## Cấu hình local
 
 ```bash
 npm install
-cp .env.example .env.local   # điền key nếu muốn dùng LLM (không bắt buộc)
-npm run dev                  # http://localhost:3000
+cp .env.example .env.local
+npm run dev
 ```
 
-**Không có API key vẫn chạy được** — app tự rơi về chế độ rules-only: toàn bộ rule-based checker tiếng Việt, OCR, layout check, report vẫn hoạt động. Badge trên top bar hiển thị `○ rules only` / `● 3-model agent ready`.
-
-> Lần đầu chạy OCR, tesseract.js sẽ tải Vietnamese traineddata (~vài MB) về `storage/tessdata/` — cần internet một lần.
-
-## Cấu hình LLM (.env.local)
+Mặc định app chạy tại:
 
 ```text
-AI_GATEWAY_BASE_URL=   # OpenAI-compatible endpoint, vd: https://gateway.example.com/v1
-AI_GATEWAY_API_KEY=    # secret — KHÔNG commit
-MODEL_ID_QWEN=         # model id thật trên gateway, vd: qwen/qwen3.5-27b
-MODEL_ID_MINIMAX=
-MODEL_ID_GEMMA=        # cần vision để cross-check ảnh
+http://localhost:3000
+```
 
-# Optional external fallback for image OCR/cross-check
-GEMINI_API_KEY=        # secret — KHÔNG commit, set ở .env.local hoặc AgentBase runtime env
+Không có API key, Typolice vẫn chạy được rule-based checks, OCR local và report. Khi có model runtime env, app bật deep check qua các model đã cấu hình.
+
+## Biến môi trường chính
+
+```text
+AI_GATEWAY_BASE_URL=
+AI_GATEWAY_API_KEY=
+MODEL_ID_QWEN=
+MODEL_ID_MINIMAX=
+MODEL_ID_GEMMA=
+
+GEMINI_API_KEY=
 MODEL_ID_GEMINI=gemini-2.5-flash-lite
 
-# AgentBase Runtime fallback (no secret stored in source)
+MODEL_CAPTION_QA=qwen
+MODEL_VERIFY=minimax
+MODEL_IMAGE_QA=gemma
+MODEL_REPORT=minimax
+
 GREENNODE_AIP_FALLBACK=true
 GREENNODE_MAAS_BASE_URL=https://maas-llm-aiplatform-hcm.api.vngcloud.vn/v1
 GREENNODE_AIP_API_KEY_NAME=
 GREENNODE_AIP_AUTO_CREATE_KEY=false
 ```
 
-Routing theo role: `MODEL_CAPTION_QA=qwen`, `MODEL_VERIFY=minimax`, `MODEL_IMAGE_QA=gemma`, `MODEL_REPORT=minimax`. Key chỉ được đọc ở server (API routes); log lỗi tự redact key.
-
-Muốn dùng Gemini cho phần đọc ảnh thì set:
-
-```text
-MODEL_IMAGE_QA=gemini
-GEMINI_API_KEY=<set in runtime secret>
-MODEL_ID_GEMINI=gemini-2.5-flash-lite
-```
-
-Gemini là external optional fallback; nếu dùng khi submit Claw-a-thon cần khai báo rõ trong README/demo. Không đưa key thật lên GitHub hay Dockerfile.
-
-Model orchestration:
-
-- **Qwen**: caption QA, tìm lỗi tiếng Việt/ngữ cảnh/brand/style.
-- **MiniMax**: verifier chống false positive và report writer.
-- **Gemma**: vision OCR correction + image text QA.
-- **Gemini optional**: có thể thay role `image_qa` cho Deep image scan khi cần fallback vision/OCR ngoài MaaS.
-
-## Luồng demo
-
-1. Paste caption có lỗi vào Caption editor (panel dưới canvas) — rule checker chạy tự động sau ~0.8s, lỗi được highlight inline.
-2. Hover vào highlight → popover Original/Suggestion/Reason/Confidence + Accept/Ignore/+Dictionary.
-3. Upload 3–6 poster (panel trái) — OCR chạy nền, badge hiển thị trạng thái.
-4. Bấm preset (FB Feed Square, LI Carousel…) để tạo artboard, kéo ảnh từ panel trái thả vào artboard.
-5. Bấm **Run Agent QA** — agent tự chạy guideline loader → rules → Qwen caption QA → MiniMax verifier → OCR/Gemma image QA → merge decisions.
-6. Tab **Agent** — xem workflow trace: từng bước, model/tool dùng, status, duration và số issue.
-7. Tab **Corrected** — caption đã sửa (definite fixes, confidence ≥ 0.85), copy 1 click.
-8. Tab **Export** — tải QA report Markdown/JSON.
-
-Caption mẫu để demo:
-
-```text
-Tại VNG,  AI đang dần trở thành một phần trong công việc hằng ngày.
-Tinh thần lan tỏa mạnh mẻ hơn bao giờ hết .
-GreenNode Claw -a-thon đã chính thức khỏi động, mỡ ra sân chơi mới.
-Các đội thi sẻ phát triển AI Agent cho người dùng no-tech.
-# ClawathonShortcut #LifeatVNG
-```
+Không đưa key thật vào README, Dockerfile hoặc source code.
 
 ## Kiến trúc
 
 ```text
 src/
-├── types/                  # Unified Issue schema dùng chung caption/image/layout
+├── app/
+│   ├── api/
+│   │   ├── assets/              # upload ảnh, OCR per asset
+│   │   ├── brand-kit/           # guideline upload + patch dictionary
+│   │   ├── report/              # PDF/Excel report
+│   │   └── workspace/           # workspace, run-qa, deep-scan job + commit
+│   └── health/                  # health check cho AgentBase
+├── components/
+│   ├── AppSidebar.tsx           # Project/Checker navigation + history
+│   ├── BasicCheckMain.tsx       # Checker mode: caption/image cards
+│   ├── CanvasArea.tsx           # Project space/canvas
+│   ├── QAPanel.tsx              # Issues/Corrected/Guidelines/Export panel
+│   └── IssueHoverCard.tsx       # hover issue details + actions
 ├── lib/
-│   ├── qa/
-│   │   ├── ruleChecker.ts      # deterministic VN checks (chạy trước LLM, fast path)
-│   │   ├── issueMerger.ts      # validate exact substring, locate range, merge/dedupe
-│   │   ├── patchService.ts     # apply fixes end→start, giữ nguyên emoji/line break
-│   │   └── layoutChecker.ts    # legacy layout risks (không chạy image QA text-only flow)
-│   ├── brand/brandGuidelineLoader.ts  # parse brand_guidelines/ (json+csv+md), cache theo hash
-│   ├── models/
-│   │   ├── gateway.ts          # OpenAI-compatible client, redacted logging, JSON extract
-│   │   └── adapters.ts         # caption QA / verifier / Gemma vision / report prompts
-│   ├── ocr/ocrService.ts       # sharp preprocess + tesseract.js vie+eng, line bbox, versioned cache
-│   ├── ocr/ocrVisionCorrection.ts # Gemma sửa OCR text theo ảnh, giữ bbox từ Tesseract
-│   ├── server/db.ts            # JSON persistence (storage/workspace.json)
-│   └── store.ts                # Zustand client store
-├── app/api/                # upload, ocr, analyze, run-qa, report, brand-kit, files
-└── components/             # TopBar, AssetPanel, CanvasArea, CaptionEditor, QAPanel
+│   ├── brand/                   # guideline parser/loader
+│   ├── models/                  # gateway, adapters, MaaS/IAM fallback, cache
+│   ├── ocr/                     # tesseract.js OCR, image payload preprocess
+│   ├── qa/                      # rule checker, issue merge, deep scan jobs
+│   ├── report/                  # monthly PDF/Excel report builder
+│   └── store.ts                 # Zustand state + run orchestration
+└── types/                       # shared Issue/Asset/Workspace schema
 ```
 
-Nguyên tắc cốt lõi (theo spec):
+## Pipeline QA
 
-- **LLM chỉ trả structured JSON** — không bao giờ tin offset của LLM; backend tìm exact substring (`locateRange` + context disambiguation), quote không tồn tại thì loại.
-- **Rules trước, LLM sau** — kết quả rule-based hiện ngay, LLM bổ sung khi Run QA / Deep check.
-- **3-model agent orchestration** — Qwen caption QA, MiniMax verifier/report, Gemma vision image QA.
-- **Verifier pass** chống sửa bừa, chỉ chạy trên issue do LLM tìm ra.
-- **Agent Run Trace** — backend trả log từng bước để demo rõ đây là automation workflow chứ không chỉ là editor.
-- **Brand Kit là whitelist** — term trong `do_not_change` không bao giờ bị sửa; "+ Dictionary" ghi thẳng vào `brand_guidelines/brand_kit.json`.
-- **Cache theo content hash** — caption QA cache theo text+brand kit; OCR cache theo file hash (kéo/resize ảnh không OCR lại, chỉ transform bbox).
+```text
+Run card
+  → Fast deterministic checks
+  → Warm/reuse OCR cache
+  → Start deep-scan job
+  → Caption AI
+  → Image AI
+  → Self-check/verifier
+  → Safe commit if content fingerprint still matches
+  → Merge result into the same card
+```
 
-## Brand guidelines
+Nguyên tắc an toàn:
 
-Bỏ file vào `brand_guidelines/` (xem README trong folder đó). Ưu tiên khi conflict: `campaigns/*.json` → `brand_kit.json` → CSV → markdown → model suggestion.
+- Không tin offset từ LLM; mọi issue phải map được về text/bbox thật.
+- Nếu candidate chưa chắc nhưng có exact text/bbox, hiển thị dạng Needs review thay vì bỏ mất.
+- Nếu user sửa nội dung trong lúc deep scan, server không commit kết quả cũ.
+- Retry theo step/model cache, tránh chạy lại toàn bộ Run từ đầu.
+- Không scan QR/link safety để giảm thời gian check và giữ scope content QA.
 
-## Khác biệt so với spec v1.2 (có chủ đích)
+## Report
 
-| Spec | Bản build | Lý do |
-|---|---|---|
-| PaddleOCR | tesseract.js | Single-stack Node, không cần Python service; vẫn có bbox + confidence |
-| Tiptap editor | Review/Edit toggle | Ổn định với IME tiếng Việt/emoji, range mapping đơn giản, đủ cho flow paste→review |
-| Konva canvas | DOM + CSS transform | Overlay bbox/hover bằng HTML dễ hơn; đủ cho pan/zoom/drag-drop |
-| SQLite/Postgres | JSON file | Zero infra cho hackathon; interface `db.ts` dễ swap sau |
-| Workspace CRUD nhiều endpoint | 1 workspace mặc định | Demo chỉ cần 1 campaign |
-| Spec chỉ có API key | Thêm `AI_GATEWAY_BASE_URL` + `MODEL_ID_*` | Thiếu thì không gọi được gateway |
+Typolice xuất:
 
-## Chưa làm (ngoài scope MVP)
+- **PDF**: executive summary, quality/brand compliance, velocity/timestamp và strategic insights.
+- **Excel**: dashboard tổng quan và log kiểm duyệt chi tiết theo từng phiên/nội dung.
 
-Export PNG/PDF artboard, carousel reorder, crop tool, multi-workspace, realtime collab, auto-post.
+Report dùng dữ liệu issues, card, upload timestamp, agent trace và trạng thái review hiện tại.
+
+## Triển khai AgentBase
+
+Runtime khuyến nghị:
+
+```text
+Flavor: runtime-s2-general-4x8
+CPU/RAM: 4 vCPU / 8 GB RAM
+Min replicas: 1
+Max replicas: 1
+CPU scale: 70%
+Memory scale: 75%
+Network: PUBLIC
+Port: 8080
+```
+
+Dockerfile đã bundle OCR runtime data `vie+eng` để endpoint không phải tải traineddata khi khởi động.
+
+## Claw-a-thon positioning
+
+**Track:** Coding & Automation / Automation & Integration.
+
+**Problem:** Marketing/Comms team mất nhiều thời gian soi thủ công caption, poster text, hashtag, brand spelling và guideline trước khi publish.
+
+**Agent solution:** Typolice tự động đọc guideline, đọc chữ trên ảnh, chạy rule chắc chắn, gọi nhiều model cho deep check/verifier, lưu human decision và xuất report.
+
+**Value:** giảm lỗi chính tả/brand compliance, giảm thời gian duyệt nội dung, vẫn giữ human-in-loop cho quyết định cuối.
+

@@ -1,6 +1,7 @@
 {
   "name": "social-content-qa-workspace",
   "version": "0.1.0",
+  "description": "Typolice giúp đội Marketing/Truyền thông bắt typo, kiểm tra guideline trên caption và hình ảnh, rồi xuất report PDF/Excel để duyệt nội dung nhanh và đúng brand hơn.",
   "private": true,
   "scripts": {
     "dev": "next dev",
