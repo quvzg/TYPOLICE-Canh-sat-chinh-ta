@@ -386,6 +386,7 @@ function CaptionArtboardBody({
   const analyzing = useQAStore((s) => s.analyzing);
   const scanStatus = useQAStore((s) => s.cardScanStatus[ab.id]);
   const scanInProgress = isScanInProgress(scanStatus);
+  const scanComplete = scanStatus?.phase === "complete";
 
   const text = isPrimary ? captionText : ab.text ?? "";
   const openIssues = isPrimary
@@ -433,6 +434,12 @@ function CaptionArtboardBody({
           <span>
             Typolice vẫn đang rà soát caption này. Lỗi mới vẫn có thể xuất hiện, vui lòng đợi rà xong trước khi bấm Run lại.
           </span>
+        </div>
+      )}
+      {!scanInProgress && scanComplete && (
+        <div className="cp-caption-scan-done cp-caption-scan-warning-artboard" role="status">
+          <span className="cp-caption-scan-done-dot" />
+          <span>Đã done. Typolice đã rà xong caption này.</span>
         </div>
       )}
       <div data-artboard-no-drag="1" data-canvas-wheel-local="1" className="cp-caption-type-area min-h-0 flex-1 cursor-default p-10">

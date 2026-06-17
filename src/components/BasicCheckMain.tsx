@@ -67,14 +67,25 @@ function isScanInProgress(status?: CardScanStatus) {
   return status?.phase === "fast_running" || status?.phase === "deep_running";
 }
 
+function scanProgressValue(status: CardScanStatus) {
+  if (status.phase === "complete" || status.phase === "failed" || status.phase === "needs_rerun") return 100;
+  return Math.max(8, Math.min(99, status.progress ?? (status.phase === "fast_running" ? 18 : 42)));
+}
+
 function ScanStatusLine({ status }: { status?: CardScanStatus }) {
   if (!status) return null;
   const coverage = scanCoverageLabel(status);
+  const progress = scanProgressValue(status);
   return (
-    <div className="cp-scan-status" data-scan-status={scanTone(status.phase)} title={status.detail}>
-      <span className="cp-scan-status-dot" />
-      <span className="min-w-0 truncate">{status.message}</span>
-      {coverage && <span className="cp-scan-status-count">{coverage}</span>}
+    <div className="cp-scan-status-wrap" data-scan-status={scanTone(status.phase)} title={status.detail}>
+      <div className="cp-scan-status">
+        <span className="cp-scan-status-dot" />
+        <span className="min-w-0 truncate">{status.message}</span>
+        {coverage && <span className="cp-scan-status-count">{coverage}</span>}
+      </div>
+      <div className="cp-scan-progress" aria-hidden="true">
+        <span style={{ "--scan-progress": `${progress}%` } as CSSProperties} />
+      </div>
     </div>
   );
 }
@@ -246,6 +257,7 @@ function CaptionCheckCard({ artboard, index }: { artboard: Artboard; index: numb
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const segments = useMemo(() => buildCaptionSegments(text, openIssues), [text, openIssues]);
   const scanInProgress = running || isScanInProgress(cardScanStatus);
+  const scanComplete = cardScanStatus?.phase === "complete";
 
   useEffect(() => {
     if (openIssues.length > 0) setMode("review");
@@ -356,6 +368,12 @@ function CaptionCheckCard({ artboard, index }: { artboard: Artboard; index: numb
             <span>
               Typolice vẫn đang rà soát caption này. Lỗi mới vẫn có thể xuất hiện, vui lòng đợi rà xong trước khi bấm Run lại.
             </span>
+          </div>
+        )}
+        {!scanInProgress && scanComplete && (
+          <div className="cp-caption-scan-done" role="status">
+            <span className="cp-caption-scan-done-dot" />
+            <span>Đã done. Typolice đã rà xong caption này.</span>
           </div>
         )}
         {mode === "edit" ? (

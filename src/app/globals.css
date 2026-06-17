@@ -1624,13 +1624,17 @@ html[data-theme="light"] *::-webkit-scrollbar-thumb:hover {
     0 6px 14px rgba(0, 0, 0, 0.1);
 }
 
+.cp-scan-status-wrap {
+  min-width: 0;
+  margin-top: 0.28rem;
+  color: #a1a1aa;
+}
+
 .cp-scan-status {
   display: flex;
   align-items: center;
   gap: 0.38rem;
   min-width: 0;
-  margin-top: 0.28rem;
-  color: #a1a1aa;
   font-size: 11.5px;
   font-weight: 600;
   line-height: 1.25;
@@ -1656,19 +1660,38 @@ html[data-theme="light"] *::-webkit-scrollbar-thumb:hover {
   opacity: 0.82;
 }
 
-.cp-scan-status[data-scan-status="busy"] {
+.cp-scan-progress {
+  position: relative;
+  height: 3px;
+  margin-top: 0.32rem;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: rgba(63, 63, 70, 0.72);
+}
+
+.cp-scan-progress span {
+  display: block;
+  width: var(--scan-progress, 0%);
+  height: 100%;
+  border-radius: inherit;
+  background: currentColor;
+  box-shadow: 0 0 12px currentColor;
+  transition: width 320ms ease;
+}
+
+.cp-scan-status-wrap[data-scan-status="busy"] {
   color: #fbbf24;
 }
 
-.cp-scan-status[data-scan-status="done"] {
+.cp-scan-status-wrap[data-scan-status="done"] {
   color: #34d399;
 }
 
-.cp-scan-status[data-scan-status="warning"] {
+.cp-scan-status-wrap[data-scan-status="warning"] {
   color: #fb923c;
 }
 
-.cp-scan-status[data-scan-status="failed"] {
+.cp-scan-status-wrap[data-scan-status="failed"] {
   color: #f87171;
 }
 
@@ -1704,6 +1727,31 @@ html[data-theme="light"] *::-webkit-scrollbar-thumb:hover {
   background: currentColor;
   box-shadow: 0 0 12px currentColor;
   animation: typolice-soft-pulse 1.25s ease-in-out infinite;
+}
+
+.cp-caption-scan-done {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.48rem;
+  margin-bottom: 0.75rem;
+  border: 1px solid rgba(52, 211, 153, 0.24);
+  border-radius: 12px;
+  background: rgba(16, 185, 129, 0.08);
+  padding: 0.62rem 0.72rem;
+  color: #34d399;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.cp-caption-scan-done-dot {
+  width: 0.42rem;
+  height: 0.42rem;
+  flex: 0 0 auto;
+  margin-top: 0.28em;
+  border-radius: 9999px;
+  background: currentColor;
+  box-shadow: 0 0 12px currentColor;
 }
 
 @keyframes typolice-soft-pulse {
@@ -2188,19 +2236,19 @@ html[data-theme="light"] .cp-card-action-button[data-card-action="danger"]:hover
     0 8px 18px rgba(119, 99, 84, 0.14);
 }
 
-html[data-theme="light"] .cp-scan-status[data-scan-status="busy"] {
+html[data-theme="light"] .cp-scan-status-wrap[data-scan-status="busy"] {
   color: #b45309;
 }
 
-html[data-theme="light"] .cp-scan-status[data-scan-status="done"] {
+html[data-theme="light"] .cp-scan-status-wrap[data-scan-status="done"] {
   color: #047857;
 }
 
-html[data-theme="light"] .cp-scan-status[data-scan-status="warning"] {
+html[data-theme="light"] .cp-scan-status-wrap[data-scan-status="warning"] {
   color: #c2410c;
 }
 
-html[data-theme="light"] .cp-scan-status[data-scan-status="failed"] {
+html[data-theme="light"] .cp-scan-status-wrap[data-scan-status="failed"] {
   color: #b91c1c;
 }
 
@@ -2208,6 +2256,12 @@ html[data-theme="light"] .cp-caption-scan-warning {
   border-color: rgba(217, 119, 6, 0.32);
   background: rgba(255, 237, 213, 0.74);
   color: #9a3412;
+}
+
+html[data-theme="light"] .cp-caption-scan-done {
+  border-color: rgba(4, 120, 87, 0.28);
+  background: rgba(209, 250, 229, 0.7);
+  color: #047857;
 }
 
 /* Light mode needs darker semantic colors on warm white surfaces. */

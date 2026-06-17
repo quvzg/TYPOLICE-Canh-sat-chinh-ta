@@ -17,6 +17,7 @@ export interface CardScanStatus {
   message: string;
   detail?: string;
   updatedAt: string;
+  progress?: number;
   fastIssueCount?: number;
   finalIssueCount?: number;
   coverage?: CoverageStatus;
@@ -498,6 +499,23 @@ function deepScanFriendlyMessage(job: Awaited<ReturnType<typeof startDeepScanJob
   if (active.phase === "self_check") return "Đang tự kiểm tra lại kết quả...";
   if (active.phase === "merge") return "Đang cập nhật kết quả...";
   return active.detail || "Đang rà soát kỹ...";
+}
+
+function deepScanProgress(job: Awaited<ReturnType<typeof startDeepScanJob>>) {
+  if (job.status === "completed") return 96;
+  const active = [...(job.checkpoints ?? [])].reverse().find((item) =>
+    item.status === "running" || item.status === "completed" || item.status === "failed"
+  );
+  if (!active) return 32;
+  const base: Record<string, number> = {
+    ocr: 42,
+    caption_ai: 58,
+    image_ai: 72,
+    self_check: 86,
+    merge: 94,
+  };
+  const value = base[active.phase] ?? 48;
+  return active.status === "completed" ? Math.min(96, value + 6) : value;
 }
 
 function hasAnyRunning(values: Record<string, boolean>) {
@@ -1067,6 +1085,7 @@ export const useQAStore = create<QAState>((set, get) => ({
       phase: "fast_running",
       message: "Đang kiểm tra nhanh...",
       detail: "Typolice sẽ hiện kết quả đầu tiên trước, sau đó tiếp tục rà kỹ ở nền.",
+      progress: 18,
       coverage: "still_checking",
     });
     set({ activeTab: "issues" });
@@ -1092,6 +1111,7 @@ export const useQAStore = create<QAState>((set, get) => ({
           phase: "complete",
           message: "Đã rà xong",
           detail: `Nội dung không đổi nên Typolice dùng lại kết quả gần nhất lúc ${new Date(cached.cachedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}.`,
+          progress: 100,
           fastIssueCount: finalIssueCount,
           finalIssueCount,
           coverage: coverageForRun(targetKey, issues, cached.assets, current.artboards),
@@ -1118,6 +1138,7 @@ export const useQAStore = create<QAState>((set, get) => ({
             phase: "deep_running",
             message: "Vẫn đang rà soát...",
             detail: "Lỗi mới vẫn có thể xuất hiện. Vui lòng đợi rà xong trước khi bấm Run lại hoặc chốt nội dung.",
+            progress: 34,
             fastIssueCount,
             coverage: "still_checking",
           }
@@ -1125,6 +1146,7 @@ export const useQAStore = create<QAState>((set, get) => ({
             phase: "complete",
             message: "Đã rà xong",
             detail: fastIssueCount > 0 ? `Tìm thấy ${fastIssueCount} lỗi đang mở.` : "Chưa thấy lỗi đang mở.",
+            progress: 100,
             fastIssueCount,
             finalIssueCount: fastIssueCount,
             coverage: coverageForRun(targetKey, data.workspace.issues, data.workspace.assets, data.workspace.artboards ?? get().artboards),
@@ -1165,6 +1187,7 @@ export const useQAStore = create<QAState>((set, get) => ({
                 phase: "deep_running",
                 message: deepScanFriendlyMessage(nextJob),
                 detail: "Lỗi mới vẫn có thể xuất hiện trong lúc Typolice đang rà kỹ.",
+                progress: deepScanProgress(nextJob),
                 fastIssueCount,
                 coverage: "still_checking",
               });
@@ -1176,6 +1199,7 @@ export const useQAStore = create<QAState>((set, get) => ({
                 phase: "needs_rerun",
                 message: "Nội dung đã thay đổi. Bấm Run để kiểm tra lại.",
                 detail: "Typolice đã giữ kết quả nhanh trước đó, nhưng bản rà kỹ thuộc nội dung cũ nên không tự áp dụng.",
+                progress: 100,
                 fastIssueCount,
                 coverage: coverageForRun(targetKey, current.issues, current.assets, current.artboards),
               });
@@ -1204,6 +1228,7 @@ export const useQAStore = create<QAState>((set, get) => ({
               detail: finalIssueCount > fastIssueCount
                 ? `Typolice vừa tìm thêm ${finalIssueCount - fastIssueCount} lỗi cần xem.`
                 : "Không thấy thêm lỗi mới sau khi rà kỹ.",
+              progress: 100,
               fastIssueCount,
               finalIssueCount,
               coverage: coverageForRun(targetKey, finalIssues, finalAssets, current.artboards),
@@ -1215,6 +1240,7 @@ export const useQAStore = create<QAState>((set, get) => ({
                 phase: "needs_rerun",
                 message: "Nội dung đã thay đổi. Bấm Run để kiểm tra lại.",
                 detail: "Typolice không ghi kết quả rà kỹ cũ vào workspace.",
+                progress: 100,
                 fastIssueCount,
                 coverage: coverageForRun(targetKey, get().issues, get().assets, get().artboards),
               });
@@ -1224,6 +1250,7 @@ export const useQAStore = create<QAState>((set, get) => ({
               phase: "failed",
               message: "Chưa rà kỹ xong. Kết quả nhanh vẫn đang hiển thị.",
               detail: "Typolice đã tự thử lại một lần. Bạn có thể bấm Run lại sau nếu muốn rà kỹ thêm.",
+              progress: 100,
               fastIssueCount,
               coverage: coverageForRun(targetKey, get().issues, get().assets, get().artboards),
             });
@@ -1239,6 +1266,7 @@ export const useQAStore = create<QAState>((set, get) => ({
         phase: "failed",
         message: "Chưa kiểm tra được. Hãy thử Run lại.",
         detail: "Typolice chưa nhận được kết quả cho lần chạy này.",
+        progress: 100,
         coverage: coverageForRun(targetKey, get().issues, get().assets, get().artboards),
       });
       throw err;
