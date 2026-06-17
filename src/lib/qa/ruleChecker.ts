@@ -55,6 +55,8 @@ const BUILTIN_TYPOS: Record<string, string> = {
   "ZaIopay": "Zalopay",
   "Za1opay": "Zalopay",
   "GreenN0de": "GreenNode",
+  "Startter": "Starter",
+  "STARTTER": "Starter",
   "đốitượng": "đối tượng",
   "hìnhthức": "hình thức",
   "thờigian": "thời gian",
@@ -164,6 +166,9 @@ const KNOWN_ACRONYMS = [
   "UX",
   "AI",
 ].sort((a, b) => b.length - a.length);
+
+const HEADING_MAX_WORDS = 32;
+const HEADING_MAX_CHARS = 180;
 
 function escapeRegExp(s: string) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -672,7 +677,7 @@ function isLikelyHeadingAt(text: string, index: number): boolean {
   const line = lineForIndex(text, index);
   if (!line) return false;
   const words = line.match(/[\p{L}\p{N}]+/gu) ?? [];
-  if (words.length === 0 || words.length > 14 || line.length > 120) return false;
+  if (words.length === 0 || words.length > HEADING_MAX_WORDS || line.length > HEADING_MAX_CHARS) return false;
   if (/[:;]|\bhttps?:\/\//iu.test(line)) return false;
   const firstNonEmpty = text.split("\n").find((item) => item.trim().length > 0)?.trim();
   if (firstNonEmpty === line) return true;
@@ -714,7 +719,7 @@ function isUppercaseStyleHeadingLine(
 ) {
   if (!line || !isLikelyHeadingAt(text, lineStart)) return false;
   const words = line.match(/[\p{L}\p{N}]+/gu) ?? [];
-  if (words.length === 0 || words.length > 14 || line.length > 120) return false;
+  if (words.length === 0 || words.length > HEADING_MAX_WORDS || line.length > HEADING_MAX_CHARS) return false;
   if (/[:;]|\bhttps?:\/\//iu.test(line)) return false;
   const stats = uppercaseHeadingStats(line, lineStart, excludedRanges);
   let leadingUppercaseWords = 0;
@@ -812,6 +817,9 @@ function headingUppercaseConsistencyHits(text: string, brandKit: BrandKit): Rule
       }
 
       if (lowerTokenCount < 2) continue;
+      while (endTokenIndex > i && !tokens[endTokenIndex].hasLower) {
+        endTokenIndex -= 1;
+      }
       const endToken = tokens[endTokenIndex];
       const original = text.slice(token.start, endToken.end);
       hits.push({

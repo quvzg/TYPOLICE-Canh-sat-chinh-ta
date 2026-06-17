@@ -191,6 +191,38 @@ assert.ok(
   hasIssue("CHÍNH THỨC KHỞI ĐỘNG GREEN NODE cuộc thi AI hackathon", "cuộc thi AI hackathon", "CUỘC THI AI HACKATHON"),
   "lowercase phrase inside uppercase-style headings should be flagged as one inconsistent phrase"
 );
+assert.ok(
+  hasIssue(
+    "CHÍNH THỨC KHỞI ĐỘNG GREEN NODE CLAW-A-THON - CUỘC THI AI HACKATHON ĐẦU TIÊN DÀNH RIÊNG CHO STARTTER tại cty công nghệ hàng đầu VN",
+    "GREEN NODE",
+    "GREENNODE"
+  ),
+  "long poster headings should still uppercase brand fixes"
+);
+assert.ok(
+  hasIssue(
+    "CHÍNH THỨC KHỞI ĐỘNG GREEN NODE CLAW-A-THON - CUỘC THI AI HACKATHON ĐẦU TIÊN DÀNH RIÊNG CHO STARTTER tại cty công nghệ hàng đầu VN",
+    "STARTTER",
+    "STARTER"
+  ),
+  "long poster headings should uppercase brand typo fixes"
+);
+assert.ok(
+  hasIssue(
+    "CHÍNH THỨC KHỞI ĐỘNG GREEN NODE CLAW-A-THON - CUỘC THI AI HACKATHON ĐẦU TIÊN DÀNH RIÊNG CHO STARTTER tại cty công nghệ hàng đầu VN",
+    "VN",
+    "VIỆT NAM"
+  ),
+  "long poster headings should uppercase public text term fixes"
+);
+assert.ok(
+  hasIssue(
+    "CHÍNH THỨC KHỞI ĐỘNG GREEN NODE CLAW-A-THON - CUỘC THI AI HACKATHON ĐẦU TIÊN DÀNH RIÊNG CHO STARTTER tại cty công nghệ hàng đầu VN",
+    "tại cty công nghệ hàng đầu",
+    "TẠI CTY CÔNG NGHỆ HÀNG ĐẦU"
+  ),
+  "long poster headings should group trailing lowercase heading text without swallowing separate uppercase term fixes"
+);
 assert.equal(
   issuesFor("SIÊU SALE VNGGames\nƯu đãi hôm nay.").some((issue) => issue.original === "VNGGames" && issue.suggestion === "VNGGAMES"),
   false,
