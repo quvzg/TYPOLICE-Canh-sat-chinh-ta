@@ -491,13 +491,13 @@ function deepScanFriendlyMessage(job: Awaited<ReturnType<typeof startDeepScanJob
   const active = [...(job.checkpoints ?? [])].reverse().find((item) =>
     item.status === "running" || item.status === "completed" || item.status === "failed"
   );
-  if (!active) return "Deep scan đang chuẩn bị...";
+  if (!active) return "Đang chuẩn bị rà soát kỹ...";
   if (active.phase === "ocr") return "Đang đọc chữ trên ảnh...";
   if (active.phase === "caption_ai") return "Đang rà kỹ caption...";
   if (active.phase === "image_ai") return "Đang rà kỹ chữ trên ảnh...";
   if (active.phase === "self_check") return "Đang tự kiểm tra lại kết quả...";
   if (active.phase === "merge") return "Đang cập nhật kết quả...";
-  return active.detail || "Deep scan đang chạy...";
+  return active.detail || "Đang rà soát kỹ...";
 }
 
 function hasAnyRunning(values: Record<string, boolean>) {
@@ -1065,8 +1065,8 @@ export const useQAStore = create<QAState>((set, get) => ({
     setTargetRunning(set, "qaRunningTargets", targetKey, true);
     setScanStatus(set, targetKey, {
       phase: "fast_running",
-      message: "Fast check in progress...",
-      detail: "Typolice will show the first results quickly, then continue scanning in the background.",
+      message: "Đang kiểm tra nhanh...",
+      detail: "Typolice sẽ hiện kết quả đầu tiên trước, sau đó tiếp tục rà kỹ ở nền.",
       coverage: "still_checking",
     });
     set({ activeTab: "issues" });
@@ -1090,8 +1090,8 @@ export const useQAStore = create<QAState>((set, get) => ({
         });
         setScanStatus(set, targetKey, {
           phase: "complete",
-          message: "Checked",
-          detail: `Reused the latest result for this unchanged card. Cached at ${new Date(cached.cachedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}.`,
+          message: "Đã rà xong",
+          detail: `Nội dung không đổi nên Typolice dùng lại kết quả gần nhất lúc ${new Date(cached.cachedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}.`,
           fastIssueCount: finalIssueCount,
           finalIssueCount,
           coverage: coverageForRun(targetKey, issues, cached.assets, current.artboards),
@@ -1116,14 +1116,14 @@ export const useQAStore = create<QAState>((set, get) => ({
       setScanStatus(set, targetKey, smartRun && get().llmConfigured
         ? {
             phase: "deep_running",
-            message: "Fast check preview loaded. Deep scan in progress...",
-            detail: "Additional issues may be found. Typolice will add them to this card automatically.",
+            message: "Vẫn đang rà soát...",
+            detail: "Lỗi mới vẫn có thể xuất hiện. Vui lòng đợi rà xong trước khi bấm Run lại hoặc chốt nội dung.",
             fastIssueCount,
             coverage: "still_checking",
           }
         : {
             phase: "complete",
-            message: "Checked",
+            message: "Đã rà xong",
             detail: fastIssueCount > 0 ? `Tìm thấy ${fastIssueCount} lỗi đang mở.` : "Chưa thấy lỗi đang mở.",
             fastIssueCount,
             finalIssueCount: fastIssueCount,
@@ -1164,7 +1164,7 @@ export const useQAStore = create<QAState>((set, get) => ({
               setScanStatus(set, targetKey, {
                 phase: "deep_running",
                 message: deepScanFriendlyMessage(nextJob),
-                detail: nextJob.checkpoints?.map((item) => `${item.phase}: ${item.status}`).join(" · "),
+                detail: "Lỗi mới vẫn có thể xuất hiện trong lúc Typolice đang rà kỹ.",
                 fastIssueCount,
                 coverage: "still_checking",
               });
@@ -1200,7 +1200,7 @@ export const useQAStore = create<QAState>((set, get) => ({
             });
             setScanStatus(set, targetKey, {
               phase: "complete",
-              message: "Checked",
+              message: "Đã rà xong",
               detail: finalIssueCount > fastIssueCount
                 ? `Typolice vừa tìm thêm ${finalIssueCount - fastIssueCount} lỗi cần xem.`
                 : "Không thấy thêm lỗi mới sau khi rà kỹ.",

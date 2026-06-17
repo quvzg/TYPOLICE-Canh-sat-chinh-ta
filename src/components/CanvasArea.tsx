@@ -47,6 +47,10 @@ function isPrimaryCaptionIssue(issue: Issue) {
     );
 }
 
+function isScanInProgress(status?: { phase?: string }) {
+  return status?.phase === "fast_running" || status?.phase === "deep_running";
+}
+
 const SNAP_THRESHOLD = 36;
 const MIN_TEXT_BOARD_WIDTH = 640;
 const MIN_TEXT_BOARD_HEIGHT = 360;
@@ -380,6 +384,8 @@ function CaptionArtboardBody({
   const selectIssue = useQAStore((s) => s.selectIssue);
   const setTab = useQAStore((s) => s.setTab);
   const analyzing = useQAStore((s) => s.analyzing);
+  const scanStatus = useQAStore((s) => s.cardScanStatus[ab.id]);
+  const scanInProgress = isScanInProgress(scanStatus);
 
   const text = isPrimary ? captionText : ab.text ?? "";
   const openIssues = isPrimary
@@ -421,6 +427,14 @@ function CaptionArtboardBody({
           </button>
         </div>
       </div>
+      {scanInProgress && (
+        <div className="cp-caption-scan-warning cp-caption-scan-warning-artboard" role="status">
+          <span className="cp-caption-scan-warning-dot" />
+          <span>
+            Typolice vẫn đang rà soát caption này. Lỗi mới vẫn có thể xuất hiện, vui lòng đợi rà xong trước khi bấm Run lại.
+          </span>
+        </div>
+      )}
       <div data-artboard-no-drag="1" data-canvas-wheel-local="1" className="cp-caption-type-area min-h-0 flex-1 cursor-default p-10">
         {effectiveEditorMode === "edit" ? (
           <textarea
@@ -759,7 +773,9 @@ function ArtboardActionBar({
   const runQA = useQAStore((s) => s.runQA);
   const qaRunningTargets = useQAStore((s) => s.qaRunningTargets);
   const deepQaRunningTargets = useQAStore((s) => s.deepQaRunningTargets);
+  const cardScanStatus = useQAStore((s) => s.cardScanStatus[artboardId]);
   const running = Boolean(qaRunningTargets[artboardId] || deepQaRunningTargets[artboardId]);
+  const scanInProgress = running || isScanInProgress(cardScanStatus);
 
   if (kind === "note") return null;
 
@@ -774,10 +790,10 @@ function ArtboardActionBar({
     >
       <ActionButton
         icon="run"
-        label={running ? "Running" : "Run"}
-        title="Chạy QA nhanh trước, rồi tự chạy deep caption + image text scan ở nền nếu model đã cấu hình."
+        label={scanInProgress ? "Đang rà" : "Run"}
+        title={scanInProgress ? "Typolice vẫn đang rà soát, vui lòng đợi xong trước khi bấm Run lại." : "Chạy kiểm tra nhanh trước, rồi tự rà kỹ ở nền nếu AI đã cấu hình."}
         onClick={() => void runQA("smart", artboardId)}
-        disabled={running}
+        disabled={scanInProgress}
         className=""
       />
     </div>
@@ -1481,13 +1497,13 @@ export default function CanvasArea() {
         >
           <div className="flex items-center gap-2">
             <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-amber-300" />
-            <span className="font-semibold">Deep scan in progress...</span>
+            <span className="font-semibold">Typolice vẫn đang rà soát...</span>
             <span className="ml-auto rounded-full bg-amber-400/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-200">
-              Fast check preview loaded
+              Đã hiện kết quả nhanh
             </span>
           </div>
           <p className="mt-0.5 text-amber-200/70">
-            Additional issues may be found. Please wait until completed before finalizing the content.
+            Lỗi mới vẫn có thể xuất hiện. Vui lòng đợi rà xong trước khi chốt nội dung.
           </p>
         </div>
       )}

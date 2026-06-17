@@ -42,25 +42,29 @@ function scanTone(phase: ScanPhase) {
 
 function scanCoverageLabel(status: CardScanStatus) {
   const coverageText = status.coverage === "still_checking"
-    ? "Still checking"
+    ? "Đang rà soát"
     : status.coverage === "needs_review"
-      ? "Needs review"
+      ? "Cần xem lại"
       : status.coverage === "could_not_fully_read"
-        ? "Could not fully read"
+        ? "Chưa đọc hết"
         : status.coverage === "checked"
-          ? "Checked"
+          ? "Đã kiểm tra"
           : null;
   const withCoverage = (count: string | null) => coverageText && count ? `${coverageText} · ${count}` : coverageText ?? count;
   if (status.phase === "deep_running" && typeof status.fastIssueCount === "number") {
-    return withCoverage(`${status.fastIssueCount} issues found`);
+    return withCoverage(`${status.fastIssueCount} lỗi đã thấy`);
   }
   if (status.phase === "complete" && typeof status.finalIssueCount === "number") {
-    return withCoverage(`${status.finalIssueCount} open issues`);
+    return withCoverage(`${status.finalIssueCount} lỗi đang mở`);
   }
   if (status.phase === "failed" && typeof status.fastIssueCount === "number") {
-    return withCoverage(`${status.fastIssueCount} fast issues kept`);
+    return withCoverage(`giữ ${status.fastIssueCount} lỗi nhanh`);
   }
   return coverageText;
+}
+
+function isScanInProgress(status?: CardScanStatus) {
+  return status?.phase === "fast_running" || status?.phase === "deep_running";
 }
 
 function ScanStatusLine({ status }: { status?: CardScanStatus }) {
@@ -241,6 +245,7 @@ function CaptionCheckCard({ artboard, index }: { artboard: Artboard; index: numb
   const [hoverCard, setHoverCard] = useState<{ issue: Issue; x: number; y: number } | null>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const segments = useMemo(() => buildCaptionSegments(text, openIssues), [text, openIssues]);
+  const scanInProgress = running || isScanInProgress(cardScanStatus);
 
   useEffect(() => {
     if (openIssues.length > 0) setMode("review");
@@ -311,11 +316,11 @@ function CaptionCheckCard({ artboard, index }: { artboard: Artboard; index: numb
           <button
             type="button"
             data-run-action-button="1"
-            disabled={!text.trim() || running}
+            disabled={!text.trim() || scanInProgress}
             onClick={() => void runQA("smart", artboard.id)}
             className="cp-card-action-button"
-            title={running ? "Scanning this card" : "Scan this card"}
-            aria-label={running ? "Scanning this card" : "Scan this card"}
+            title={scanInProgress ? "Typolice vẫn đang rà soát caption này" : "Scan this card"}
+            aria-label={scanInProgress ? "Typolice vẫn đang rà soát caption này" : "Scan this card"}
           >
             <RunIcon />
           </button>
@@ -345,6 +350,14 @@ function CaptionCheckCard({ artboard, index }: { artboard: Artboard; index: numb
             </button>
           </div>
         </div>
+        {scanInProgress && (
+          <div className="cp-caption-scan-warning" role="status">
+            <span className="cp-caption-scan-warning-dot" />
+            <span>
+              Typolice vẫn đang rà soát caption này. Lỗi mới vẫn có thể xuất hiện, vui lòng đợi rà xong trước khi bấm Run lại.
+            </span>
+          </div>
+        )}
         {mode === "edit" ? (
           <textarea
             value={text}
@@ -764,10 +777,10 @@ export default function BasicCheckMain() {
           >
             <div className="flex items-center gap-2">
               <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-amber-300" />
-              <span className="font-semibold">Deep scan in progress...</span>
-              <span className="ml-auto rounded-full bg-amber-400/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-200">Fast check preview loaded</span>
+              <span className="font-semibold">Typolice vẫn đang rà soát...</span>
+              <span className="ml-auto rounded-full bg-amber-400/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-200">Đã hiện kết quả nhanh</span>
             </div>
-            <p className="mt-0.5 text-amber-200/70">Additional issues may be found. Please wait until completed before finalizing the content.</p>
+            <p className="mt-0.5 text-amber-200/70">Lỗi mới vẫn có thể xuất hiện. Vui lòng đợi rà xong trước khi chốt nội dung.</p>
           </div>
         )}
 
